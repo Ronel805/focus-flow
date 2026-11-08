@@ -1,14 +1,16 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-  <!-- תמיכה במסך מלא לנייד -->
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="פוקוס-פלו" />
-<meta name="theme-color" content="#020617" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>פוקוס-פלו | FocusFlow</title>
+  <title>FocusHabits</title>
+  
+  <!-- תמיכה באפליקציה בנייד (PWA) -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="FocusHabits" />
+  <meta name="theme-color" content="#020617" />
+
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
@@ -73,7 +75,6 @@
     ];
 
     const SHOPPING_CATEGORIES = ["כללי", "ירקות ופירות 🥑", "מוצרי חלב 🧀", "מאפים וסופר 🍞", "בשר ודגים 🥩", "מוצרי ניקיון 🧼"];
-
     const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
 
     function App() {
@@ -629,7 +630,7 @@
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                  <span className="text-emerald-400">⚡</span> פוקוס-פלו
+                  <span className="text-emerald-400">⚡</span> FocusHabits
                 </h1>
                 <p className="text-xs text-emerald-400/90 font-medium mt-0.5 flex items-center gap-1">
                   <span>☁️</span> סנכרון DB בזמן אמת
@@ -858,7 +859,7 @@
             </div>
           )}
 
-          {/* NEW TAB 3: SHOPPING LIST */}
+          {/* TAB 3: SHOPPING LIST */}
           {activeTab === 'shopping' && (
             <div className="space-y-4">
               <form onSubmit={addShoppingItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
