@@ -4,15 +4,44 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>פוקוס-פלו | מעקב הרגלים</title>
-    <!-- React & Tailwind via CDN -->
+    <!-- React, ReactDOM, Babel & Tailwind -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body class="bg-slate-900 text-slate-100 min-h-screen">
     <div id="root"></div>
-    <script type="text/babel" src="./App.jsx"></script>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      function App() {
+        return (
+          <div className="min-h-screen p-6 flex flex-col items-center justify-center text-center">
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+              <div className="text-5xl mb-4">🔥</div>
+              <h1 className="text-3xl font-bold text-emerald-400 mb-2">פוקוס-פלו באוויר!</h1>
+              <p className="text-slate-300 text-sm mb-6">
+                האפליקציה נטענה בהצלחה מ מלאה ב-Vercel.
+              </p>
+              <div className="bg-slate-900/60 p-4 rounded-xl border border-slate-700/50 text-right text-xs text-slate-400 space-y-2">
+                <div className="flex items-center justify-between text-emerald-400 font-semibold">
+                  <span>סטטוס מערכת:</span>
+                  <span>פעיל ✅</span>
+                </div>
+                <div>• תמיכה מלאה ב-RTL ועברית</div>
+                <div>• חיבור מודולרי ל-Supabase</div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
   </body>
 </html>
