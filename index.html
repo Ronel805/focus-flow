@@ -75,7 +75,6 @@
       const [habits, setHabits] = useState([]);
       const [filter, setFilter] = useState('all');
       
-      // תאריך נבחר לצפייה בטאב ההרגלים (ברירת מחדל: היום)
       const todayObj = new Date();
       const todayDateStr = todayObj.toISOString().split('T')[0];
       const [viewDate, setViewDate] = useState(todayDateStr);
@@ -142,7 +141,7 @@
                   startTime: item.start_time,
                   startDate: item.created_at || todayDateStr,
                   userName: item.user_name || 'נועה',
-                  days: item.days || [], // תמיכה במערך ריק להרגלים חד-פעמיים
+                  days: item.days || [],
                   isFavorite: item.is_favorite || false,
                   logs: item.logs || {}
                 })));
@@ -633,11 +632,9 @@
       const viewDayOfWeek = viewDateObj.getDay();
 
       const viewDateHabits = userHabits.filter(h => {
-        // אם מוגדרים ימי חזרה ספציפיים בשבוע
         if (h.days && h.days.length > 0) {
           return h.days.includes(viewDayOfWeek);
         }
-        // אם זה הרגל חד-פעמי (ללא ימי חזרה), יופיע בתאריך ההתחלה שלו
         return h.startDate === viewDate;
       });
 
@@ -650,6 +647,34 @@
       const totalCompletedView = sortedViewHabits.filter(h => h.logs && h.logs[viewDate]).length;
       const progressPercent = sortedViewHabits.length > 0 ? Math.round((totalCompletedView / sortedViewHabits.length) * 100) : 0;
       const maxStreakOverall = userHabits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
+
+      // --- חישוב סטטיסטיקות שבועיות וחודשיות ---
+      const calculateStatsForDays = (numDays) => {
+        let totalPossible = 0;
+        let totalCompleted = 0;
+        const now = new Date();
+
+        for (let i = 0; i < numDays; i++) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          const dStr = d.toISOString().split('T')[0];
+          const dDayOfWeek = d.getDay();
+
+          const dayHabits = userHabits.filter(h => {
+            if (h.days && h.days.length > 0) return h.days.includes(dDayOfWeek);
+            return h.startDate === dStr;
+          });
+
+          totalPossible += dayHabits.length;
+          totalCompleted += dayHabits.filter(h => h.logs && h.logs[dStr]).length;
+        }
+
+        if (totalPossible === 0) return 0;
+        return Math.round((totalCompleted / totalPossible) * 100);
+      };
+
+      const weeklyPercent = calculateStatsForDays(7);
+      const monthlyPercent = calculateStatsForDays(30);
 
       const filteredHabits = sortedViewHabits.filter(h => {
         const isDone = !!(h.logs && h.logs[viewDate]);
@@ -740,9 +765,8 @@
           {/* TAB 1: HABITS */}
           {activeTab === 'habits' && (
             <div className="space-y-4">
-              {/* בחירת תאריך צפייה (היום / מחר / תאריך אחר) */}
               <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between shadow-md">
-                <span className="text-xs font-bold text-slate-300">📅 בחר תאריך צפייה:</span>
+                <span className="text-xs font-bold text-slate-300">📅 בחר תאריך צפייה (היסטוריה / עתיד):</span>
                 <input 
                   type="date" 
                   value={viewDate} 
@@ -766,7 +790,6 @@
                 </div>
               </div>
 
-              {/* TODO / משימות מתוזמנות לתאריך הנבחר */}
               {viewDateCalendarEvents.length > 0 && (
                 <div className="space-y-2 bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40 shadow-md">
                   <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
@@ -1097,12 +1120,31 @@
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
-                  <span className="text-xs text-slate-400 font-semibold">אחוז השלמה יומית ({currentUser})</span>
-                  <div className="text-2xl font-black text-emerald-400 mt-1">{progressPercent}%</div>
+                  <span className="text-xs text-slate-400 font-semibold">ממוצע השלמה שבועי</span>
+                  <div className="text-2xl font-black text-emerald-400 mt-1">{weeklyPercent}%</div>
                 </div>
                 <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
-                  <span className="text-xs text-slate-400 font-semibold">שיא רצף (Streak)</span>
-                  <div className="text-2xl font-black text-amber-400 mt-1">🔥 {maxStreakOverall} ימים</div>
+                  <span className="text-xs text-slate-400 font-semibold">ממוצע השלמה חודשי</span>
+                  <div className="text-2xl font-black text-teal-400 mt-1">{monthlyPercent}%</div>
+                </div>
+              </div>
+
+              {/* רצפים לפי הרגל ספציפי */}
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>🔥</span> רצפים (Streaks) לפי הרגל של {currentUser}</h3>
+                <div className="space-y-2">
+                  {userHabits.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-2">אין הרגלים מוגדרים כרגע.</p>
+                  ) : (
+                    userHabits.map(h => (
+                      <div key={h.id} className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
+                        <span className="font-semibold text-slate-200 truncate">{h.title}</span>
+                        <span className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/20">
+                          🔥 {h.streak || 0} ימים
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
