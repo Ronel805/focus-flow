@@ -7,8 +7,8 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="script"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="script"></script>
   <!-- Babel Standalone -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <!-- Canvas Confetti -->
@@ -17,7 +17,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; }
-    .heatmap-grid { display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); grid-auto-flow: column; gap: 3px; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
@@ -26,7 +25,6 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // Supabase Credentials
     const SUPABASE_URL = "https://wwicfhomrexzczlhqlgx.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_5fELLN6m3tMcIZxRmLNIYQ_OwX13l4i";
 
@@ -42,41 +40,53 @@
       { id: 'century', name: 'מועדון ה-100', desc: 'השלמת 100 הרגלים מצטברים', icon: '👑' }
     ];
 
+    const DAYS_OF_WEEK = [
+      { id: 0, label: "א'" },
+      { id: 1, label: "ב'" },
+      { id: 2, label: "ג'" },
+      { id: 3, label: "ד'" },
+      { id: 4, label: "ה'" },
+      { id: 5, label: "ו'" },
+      { id: 6, label: "ש'" }
+    ];
+
     function App() {
-      const [activeTab, setActiveTab] = useState('habits'); // 'habits' | 'chores' | 'calendar' | 'stats'
-      const [currentUser, setCurrentUser] = useState('נועה'); // 'נועה' | 'רונאל'
+      const [activeTab, setActiveTab] = useState('habits');
+      const [currentUser, setCurrentUser] = useState('נועה');
       
-      // Habits State
       const [habits, setHabits] = useState([]);
       const [filter, setFilter] = useState('all');
       const [showAddHabitModal, setShowAddHabitModal] = useState(false);
+      
+      // New Habit Form State
+      const todayDateStr = new Date().toISOString().split('T')[0];
       const [newTitle, setNewTitle] = useState('');
       const [newMicro, setNewMicro] = useState('');
+      const [newStartTime, setNewStartTime] = useState('08:00');
+      const [newStartDate, setNewStartDate] = useState(todayDateStr);
+      const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
 
-      // Chores State
       const [chores, setChores] = useState(() => {
         const saved = localStorage.getItem('focus_flow_chores');
         return saved ? JSON.parse(saved) : [
           { id: '1', title: 'להוריד את הזבל', assignedTo: 'רונאל', done: false },
-          { id: '2', title: 'לקנות מצרכים לשבת', assignedTo: 'נועה', done: true },
-          { id: '3', title: 'לקפל כביסה', assignedTo: 'נועה', done: false }
+          { id: '2', title: 'לקנות מצרכים לשבת', assignedTo: 'נועה', done: true }
         ];
       });
       const [newChoreTitle, setNewChoreTitle] = useState('');
       const [newChoreAssignee, setNewChoreAssignee] = useState('נועה');
 
-      // Calendar State
       const [currentMonth, setCurrentMonth] = useState(new Date());
-      const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+      const [selectedDate, setSelectedDate] = useState(todayDateStr);
       const [calendarEvents, setCalendarEvents] = useState(() => {
         const saved = localStorage.getItem('focus_flow_calendar');
         return saved ? JSON.parse(saved) : {
-          [new Date().toISOString().split('T')[0]]: ['אימון כושר', 'פגישה שבועית']
+          [todayDateStr]: ['אימון כושר', 'פגישה שבועית']
         };
       });
       const [newEventText, setNewEventText] = useState('');
 
-      const todayKey = new Date().toISOString().split('T')[0];
+      const todayKey = todayDateStr;
 
       // Fetch Habits from Supabase
       useEffect(() => {
@@ -88,20 +98,20 @@
                 const formatted = data.map(item => ({
                   ...item,
                   microHabit: item.micro_habit,
+                  startTime: item.start_time,
+                  startDate: item.created_at,
+                  days: item.days || [0, 1, 2, 3, 4, 5, 6],
                   logs: item.logs || {}
                 }));
                 setHabits(formatted);
                 return;
               }
             } catch (err) {
-              console.error("Supabase error:", err);
+              console.error("Supabase fetch error:", err);
             }
           }
           const saved = localStorage.getItem('focus_flow_habits');
-          setHabits(saved ? JSON.parse(saved) : [
-            { id: '1', title: 'אימון ריצה / הליכה', microHabit: 'לנעול נעלי ספורט ולצאת ל-2 דקות', streak: 5, logs: {} },
-            { id: '2', title: 'קריאת ספר', microHabit: 'לקרוא עמוד אחד בלבד', streak: 12, logs: {} }
-          ]);
+          setHabits(saved ? JSON.parse(saved) : []);
         }
         fetchHabits();
       }, []);
@@ -114,7 +124,6 @@
         localStorage.setItem('focus_flow_calendar', JSON.stringify(calendarEvents));
       }, [calendarEvents]);
 
-      // Habits Actions (Saves to Supabase)
       const toggleHabit = async (id) => {
         const updated = habits.map(h => {
           if (h.id !== id) return h;
@@ -144,41 +153,67 @@
             id: target.id,
             title: target.title,
             micro_habit: target.microHabit,
+            start_time: target.startTime,
+            created_at: target.startDate,
+            days: target.days,
             streak: target.streak,
             logs: target.logs
           });
         }
       };
 
+      const toggleDaySelection = (dayId) => {
+        if (selectedDays.includes(dayId)) {
+          if (selectedDays.length > 1) {
+            setSelectedDays(selectedDays.filter(d => d !== dayId));
+          }
+        } else {
+          setSelectedDays([...selectedDays, dayId].sort());
+        }
+      };
+
       const addHabit = async (e) => {
         e.preventDefault();
         if (!newTitle.trim()) return;
+        
         const habit = {
           id: Date.now().toString(),
           title: newTitle,
           microHabit: newMicro,
+          startTime: newStartTime,
+          startDate: newStartDate,
+          days: selectedDays,
           streak: 0,
           logs: {}
         };
+        
         const updated = [...habits, habit];
         setHabits(updated);
         localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
 
         if (supabase) {
-          await supabase.from('habits').insert([{
-            id: habit.id,
-            title: habit.title,
-            micro_habit: habit.microHabit,
-            streak: 0,
-            logs: {}
-          }]);
+          try {
+            await supabase.from('habits').insert([{
+              id: habit.id,
+              title: habit.title,
+              micro_habit: habit.microHabit,
+              start_time: habit.startTime,
+              created_at: habit.startDate,
+              days: habit.days,
+              streak: 0,
+              logs: {}
+            }]);
+          } catch (err) {
+            console.error("Error inserting to Supabase:", err);
+          }
         }
+        
         setNewTitle('');
         setNewMicro('');
+        setNewStartTime('08:00');
         setShowAddHabitModal(false);
       };
 
-      // Chores Actions
       const toggleChore = (id) => {
         setChores(chores.map(c => c.id === id ? { ...c, done: !c.done } : c));
       };
@@ -190,7 +225,6 @@
         setNewChoreTitle('');
       };
 
-      // Calendar Helpers
       const addCalendarEvent = (e) => {
         e.preventDefault();
         if (!newEventText.trim()) return;
@@ -199,8 +233,8 @@
         setNewEventText('');
       };
 
-      const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
-      const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+      const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+      const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
 
       const year = currentMonth.getFullYear();
       const month = currentMonth.getMonth();
@@ -214,7 +248,6 @@
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
-          {/* Header */}
           <header className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -222,7 +255,7 @@
                   <span className="text-emerald-400">⚡</span> פוקוס-פלו
                 </h1>
                 <p className="text-xs text-emerald-400/90 font-medium mt-0.5 flex items-center gap-1">
-                  <span>☁️</span> מחובר וסגור ב-Supabase
+                  <span>☁️</span> מחובר לסופרבייס בענן
                 </p>
               </div>
 
@@ -248,14 +281,13 @@
                 <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
                   <div 
                     className="h-full bg-gradient-to-l from-emerald-400 to-teal-500 rounded-full transition-all duration-500"
-                    style={{ width: `${progressPercent}%` }}
+                    style={{ width: progressPercent + '%' }}
                   />
                 </div>
               </div>
             )}
           </header>
 
-          {/* Nav Tabs */}
           <nav className="grid grid-cols-4 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-[11px] font-bold">
             <button onClick={() => setActiveTab('habits')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'habits' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
               <span className="text-base">⚡</span> הרגלים
@@ -271,7 +303,6 @@
             </button>
           </nav>
 
-          {/* TAB 1: HABITS */}
           {activeTab === 'habits' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -280,32 +311,44 @@
                   <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
                   <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
                 </div>
-                <button onClick={() => setShowAddHabitModal(true)} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs">+ הרגל</button>
+                <button onClick={() => setShowAddHabitModal(true)} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל</button>
               </div>
 
               <div className="space-y-3">
-                {habits.map(habit => {
-                  const isDone = !!(habit.logs && habit.logs[todayKey]);
-                  return (
-                    <div key={habit.id} onClick={() => toggleHabit(habit.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
-                      <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>
-                        {isDone && <span className="font-black text-xs">✓</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <h3 className={`font-bold text-sm truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>{habit.title}</h3>
-                          <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">🔥 {habit.streak}</span>
+                {habits.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                    אין הרגלים קיימים. לחצי על "+ הרגל" כדי ליצור הרגל ראשון!
+                  </div>
+                ) : (
+                  habits.map(habit => {
+                    const isDone = !!(habit.logs && habit.logs[todayKey]);
+                    return (
+                      <div key={habit.id} onClick={() => toggleHabit(habit.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
+                        <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>
+                          {isDone && <span className="font-black text-xs">✓</span>}
                         </div>
-                        {habit.microHabit && <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20"><span>💡</span> {habit.microHabit}</p>}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className={`font-bold text-sm truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>{habit.title}</h3>
+                            <div className="flex items-center gap-1.5">
+                              {habit.startTime && (
+                                <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                                  ⏰ {habit.startTime}
+                                </span>
+                              )}
+                              <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">🔥 {habit.streak}</span>
+                            </div>
+                          </div>
+                          {habit.microHabit && <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20"><span>💡</span> {habit.microHabit}</p>}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB 2: HOUSEHOLD CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
               <form onSubmit={addChore} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
@@ -334,25 +377,21 @@
             </div>
           )}
 
-          {/* TAB 3: CALENDAR (FULL INTERACTIVE MONTH GRID) */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
-              {/* Month Header */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="text-xs bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">← חודש קודם</button>
+                  <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="text-xs bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">הקודם</button>
                   <h3 className="font-bold text-sm text-white">{monthNames[month]} {year}</h3>
-                  <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="text-xs bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">חודש הבא →</button>
+                  <button onClick={() => setCurrentMonth(new Date(year, month + 1, 1))} className="text-xs bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">הבא</button>
                 </div>
 
-                {/* Days Grid Header */}
                 <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-slate-400">
                   <span>א'</span><span>ב'</span><span>ג'</span><span>ד'</span><span>ה'</span><span>ו'</span><span>ש'</span>
                 </div>
 
-                {/* Calendar Days */}
                 <div className="grid grid-cols-7 gap-1 text-center text-xs">
-                  {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} />)}
+                  {Array.from({ length: firstDay }).map((_, i) => <div key={'empty-' + i} />)}
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const dayNum = i + 1;
                     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
@@ -367,7 +406,7 @@
                         className={`py-2 rounded-xl border relative font-semibold transition-all ${
                           isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950 font-black scale-105' :
                           isToday ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-400' :
-                          'bg-slate-950 border-slate-800/80 text-slate-200 hover:border-slate-700'
+                          'bg-slate-950 border-slate-800/80 text-slate-200'
                         }`}
                       >
                         {dayNum}
@@ -378,15 +417,14 @@
                 </div>
               </div>
 
-              {/* Event Viewer & Add Box */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <h4 className="text-xs font-bold text-slate-300">אירועים ליום {selectedDate}:</h4>
-                  <span className="text-[11px] font-bold text-emerald-400">{calendarEvents[selectedDate]?.length || 0} משימות</span>
+                  <span className="text-[11px] font-bold text-emerald-400">{(calendarEvents[selectedDate] && calendarEvents[selectedDate].length) || 0} משימות</span>
                 </div>
 
                 <form onSubmit={addCalendarEvent} className="flex gap-2">
-                  <input type="text" placeholder="הוסף משימה/תזכורת לתאריך הנבחר..." value={newEventText} onChange={(e) => setNewEventText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
+                  <input type="text" placeholder="הוסף משימה לתאריך..." value={newEventText} onChange={(e) => setNewEventText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
                   <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs">שמור</button>
                 </form>
 
@@ -406,7 +444,6 @@
             </div>
           )}
 
-          {/* TAB 4: STATS */}
           {activeTab === 'stats' && (
             <div className="space-y-5">
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
@@ -426,18 +463,61 @@
             </div>
           )}
 
-          {/* Add Habit Modal */}
+          {/* ADD HABIT MODAL */}
           {showAddHabitModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                   <h3 className="font-bold text-base text-white">הוספת הרגל חדש</h3>
-                  <button onClick={() => setShowAddHabitModal(false)} className="text-slate-400">✕</button>
+                  <button onClick={() => setShowAddHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
                 </div>
+
                 <form onSubmit={addHabit} className="space-y-3">
-                  <input type="text" required placeholder="שם ההרגל" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  <input type="text" placeholder="צעד קטן של 2 דקות (מיקרו-הרגל)" value={newMicro} onChange={e => setNewMicro(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs">שמור הרגל ב-Supabase</button>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">שם ההרגל</label>
+                    <input type="text" required placeholder="למשל: אימון כושר" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">צעד קטן של 2 דקות (מיקרו-הרגל)</label>
+                    <input type="text" placeholder="למשל: לנעול נעלי ספורט" value={newMicro} onChange={e => setNewMicro(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">שעת התחלה</label>
+                      <input type="time" value={newStartTime} onChange={e => setNewStartTime(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך התחלה</label>
+                      <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">ימי חזרה בשבוע</label>
+                    <div className="flex justify-between gap-1">
+                      {DAYS_OF_WEEK.map(day => {
+                        const isSelected = selectedDays.includes(day.id);
+                        return (
+                          <button
+                            type="button"
+                            key={day.id}
+                            onClick={() => toggleDaySelection(day.id)}
+                            className={`w-8 h-8 rounded-xl font-bold text-xs border transition-all ${
+                              isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'bg-slate-950 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
+                    שמור הרגל ב-Supabase
+                  </button>
                 </form>
               </div>
             </div>
