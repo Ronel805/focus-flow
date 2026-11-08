@@ -78,7 +78,10 @@
       const [showHabitModal, setShowHabitModal] = useState(false);
       const [editingHabit, setEditingHabit] = useState(null);
       
-      const todayDateStr = new Date().toISOString().split('T')[0];
+      const todayObj = new Date();
+      const todayDateStr = todayObj.toISOString().split('T')[0];
+      const currentDayOfWeek = todayObj.getDay(); // 0 = Sunday, 1 = Monday ... 6 = Saturday
+
       const [newTitle, setNewTitle] = useState('');
       const [newMicro, setNewMicro] = useState('');
       const [newStartTime, setNewStartTime] = useState('08:00');
@@ -178,7 +181,6 @@
 
         setHabits(updatedHabits);
 
-        // עדכון ישיר של LOGS ב-DB
         if (supabase) {
           await supabase.from('habits').update({
             streak: newStreak,
@@ -503,18 +505,24 @@
       const firstDay = getFirstDayOfMonth(year, month);
       const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 
-      const totalCompletedToday = habits.filter(h => h.logs && h.logs[todayKey]).length;
-      const progressPercent = habits.length > 0 ? Math.round((totalCompletedToday / habits.length) * 100) : 0;
+      // 1. סינון הרגלים לפי ימי החזרה בשבוע (האם היום בשבוע כלול בהרגל)
+      const todaysHabits = habits.filter(h => {
+        if (!h.days || h.days.length === 0) return true;
+        return h.days.includes(currentDayOfWeek);
+      });
+
+      const totalCompletedToday = todaysHabits.filter(h => h.logs && h.logs[todayKey]).length;
+      const progressPercent = todaysHabits.length > 0 ? Math.round((totalCompletedToday / todaysHabits.length) * 100) : 0;
       const maxStreakOverall = habits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
 
-      const filteredHabits = habits.filter(h => {
+      // 2. סינון לפי סטטוס (לביצוע / הושלם)
+      const filteredHabits = todaysHabits.filter(h => {
         const isDone = !!(h.logs && h.logs[todayKey]);
         if (filter === 'pending') return !isDone;
         if (filter === 'completed') return isDone;
         return true;
       });
 
-      // רשימת הרגלים מועדפים להצגה בסרגל ההוספה המהירה
       const favoriteHabitsList = habits.filter(h => h.isFavorite);
       const quickHabitsToDisplay = favoriteHabitsList.length > 0 ? favoriteHabitsList : DEFAULT_QUICK_TEMPLATES;
 
@@ -550,7 +558,7 @@
             {activeTab === 'habits' && (
               <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
                 <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-300">התקדמות יומית</span>
+                  <span className="text-slate-300">התקדמות יומית (להיום)</span>
                   <span className="text-emerald-400 font-bold">{progressPercent}%</span>
                 </div>
                 <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
@@ -639,11 +647,11 @@
                 </div>
               )}
 
-              {/* HABITS LIST WITH FAVORITE STAR */}
+              {/* HABITS LIST */}
               <div className="space-y-3">
                 {filteredHabits.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    אין הרגלים בקטגוריה זו. לחצי על "+ הרגל" כדי ליצור!
+                    אין הרגלים מתוכננים להיום. לחצי על "+ הרגל" כדי ליצור!
                   </div>
                 ) : (
                   filteredHabits.map(habit => {
@@ -680,19 +688,30 @@
 
                           {habit.microHabit && <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20"><span>💡</span> {habit.microHabit}</p>}
 
-                          <div className="flex items-center justify-end gap-2 pt-2 mt-1 border-t border-slate-800/60">
-                            <button 
-                              onClick={(e) => openEditHabitModal(habit, e)}
-                              className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
-                            >
-                              ✏️ ערוך
-                            </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'habit', id: habit.id }); }}
-                              className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
-                            >
-                              🗑️ מחק
-                            </button>
+                          <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-800/60">
+                            {/* TAGS OF SELECTED DAYS */}
+                            <div className="flex gap-1">
+                              {DAYS_OF_WEEK.map(d => (
+                                <span key={d.id} className={`text-[9px] px-1 rounded ${habit.days && habit.days.includes(d.id) ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'text-slate-600 opacity-40'}`}>
+                                  {d.label}
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={(e) => openEditHabitModal(habit, e)}
+                                className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
+                              >
+                                ✏️ ערוך
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'habit', id: habit.id }); }}
+                                className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
+                              >
+                                🗑️ מחק
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -849,12 +868,12 @@
                 <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>📈</span> סיכום פעילות</h3>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
-                    <span className="text-slate-400">סה"כ הרגלים פעילים:</span>
-                    <span className="font-bold text-white">{habits.length}</span>
+                    <span className="text-slate-400">סה"כ הרגלים מתוכננים להיום:</span>
+                    <span className="font-bold text-white">{todaysHabits.length}</span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">הרגלים שבוצעו היום:</span>
-                    <span className="font-bold text-emerald-400">{totalCompletedToday} מתוך {habits.length}</span>
+                    <span className="font-bold text-emerald-400">{totalCompletedToday} מתוך {todaysHabits.length}</span>
                   </div>
                   <div className="flex justify-between py-1.5">
                     <span className="text-slate-400">משימות בית פתוחות:</span>
