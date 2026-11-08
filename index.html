@@ -32,12 +32,31 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
-    const BADGES = [
-      { id: 'first_step', name: 'צעד ראשון', desc: 'השלמת הרגל ראשון', icon: '🌱' },
-      { id: 'streak_3', name: 'בונה תנופה', desc: 'רצף פעיל של 3 ימים', icon: '⚡' },
-      { id: 'streak_7', name: 'לוחם 7 ימים', desc: 'שמירה על רצף של 7 ימים', icon: '🔥' },
-      { id: 'shield_user', name: 'מאסטר המגן', desc: 'שימוש במגן מנוחה לשמירה על רצף', icon: '🛡️' },
-      { id: 'century', name: 'מועדון ה-100', desc: 'השלמת 100 הרגלים מצטברים', icon: '👑' }
+    // Web Audio API Sound Helper
+    const playSuccessSound = () => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.15); // E5
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      } catch (e) {
+        console.log("Audio not supported or blocked");
+      }
+    };
+
+    const QUICK_TEMPLATES = [
+      { title: 'שתיית 2L מים', micro: 'לשתות כוס מים ראשונה על הבוקר', time: '08:00' },
+      { title: 'אימון כושר / ריצה', micro: 'לנעול נעלי ספורט ולצאת ל-2 דקות', time: '07:00' },
+      { title: 'קריאת ספר', micro: 'לקרוא עמוד אחד בלבד בספר', time: '21:30' },
+      { title: 'מדיטציה / נשימות', micro: 'לקחת 3 נשימות עמוקות ומודעות', time: '07:30' }
     ];
 
     const DAYS_OF_WEEK = [
@@ -68,10 +87,18 @@
       const [newStartDate, setNewStartDate] = useState(todayDateStr);
       const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
 
+      // Chores State
       const [chores, setChores] = useState([]);
+      const [showChoreModal, setShowChoreModal] = useState(false);
+      const [editingChore, setEditingChore] = useState(null);
       const [newChoreTitle, setNewChoreTitle] = useState('');
       const [newChoreAssignee, setNewChoreAssignee] = useState('נועה');
+      const [newChoreDueDate, setNewChoreDueDate] = useState(todayDateStr);
 
+      // Confirm Delete Modal State
+      const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'habit'|'chore'|'event', id, extra }
+
+      // Calendar State
       const [currentMonth, setCurrentMonth] = useState(new Date());
       const [selectedDate, setSelectedDate] = useState(todayDateStr);
       const [calendarEvents, setCalendarEvents] = useState(() => {
@@ -82,12 +109,13 @@
 
       const todayKey = todayDateStr;
 
+      // טעינת נתונים מ-Supabase
       useEffect(() => {
         async function fetchData() {
           if (supabase) {
             try {
               const { data: habitsData } = await supabase.from('habits').select('*');
-              if (habitsData) {
+              if (habitsData && habitsData.length > 0) {
                 setHabits(habitsData.map(item => ({
                   ...item,
                   microHabit: item.micro_habit,
@@ -96,22 +124,23 @@
                   days: item.days || [0, 1, 2, 3, 4, 5, 6],
                   logs: item.logs || {}
                 })));
+              } else {
+                const savedHabits = localStorage.getItem('focus_flow_habits');
+                if (savedHabits) setHabits(JSON.parse(savedHabits));
               }
 
               const { data: choresData } = await supabase.from('chores').select('*');
-              if (choresData) {
+              if (choresData && choresData.length > 0) {
                 setChores(choresData.map(item => ({
                   ...item,
-                  assignedTo: item.assigned_to
+                  assignedTo: item.assigned_to,
+                  dueDate: item.due_date || todayDateStr
                 })));
               }
-              return;
             } catch (err) {
-              console.error("Supabase error:", err);
+              console.error("Supabase fetch error:", err);
             }
           }
-          const savedHabits = localStorage.getItem('focus_flow_habits');
-          if (savedHabits) setHabits(JSON.parse(savedHabits));
         }
         fetchData();
       }, []);
@@ -120,6 +149,7 @@
         localStorage.setItem('focus_flow_calendar', JSON.stringify(calendarEvents));
       }, [calendarEvents]);
 
+      // --- HABITS ACTIONS ---
       const toggleHabit = async (id) => {
         const target = habits.find(h => h.id === id);
         if (!target) return;
@@ -131,6 +161,7 @@
           delete updatedLogs[todayKey];
         } else {
           updatedLogs[todayKey] = true;
+          playSuccessSound();
           if (window.confetti) {
             window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
           }
@@ -143,10 +174,16 @@
         localStorage.setItem('focus_flow_habits', JSON.stringify(updatedHabits));
 
         if (supabase) {
-          await supabase.from('habits').update({
+          await supabase.from('habits').upsert({
+            id: target.id,
+            title: target.title,
+            micro_habit: target.microHabit,
+            start_time: target.startTime,
+            created_at: target.startDate,
+            days: target.days,
             streak: newStreak,
             logs: updatedLogs
-          }).eq('id', id);
+          });
         }
       };
 
@@ -169,6 +206,35 @@
         setNewStartDate(habit.startDate || todayDateStr);
         setSelectedDays(habit.days || [0, 1, 2, 3, 4, 5, 6]);
         setShowHabitModal(true);
+      };
+
+      const addQuickHabit = async (tmpl) => {
+        const habit = {
+          id: Date.now().toString(),
+          title: tmpl.title,
+          microHabit: tmpl.micro,
+          startTime: tmpl.time,
+          startDate: todayDateStr,
+          days: [0, 1, 2, 3, 4, 5, 6],
+          streak: 0,
+          logs: {}
+        };
+        const updated = [...habits, habit];
+        setHabits(updated);
+        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+
+        if (supabase) {
+          await supabase.from('habits').insert([{
+            id: habit.id,
+            title: habit.title,
+            micro_habit: habit.microHabit,
+            start_time: habit.startTime,
+            created_at: habit.startDate,
+            days: habit.days,
+            streak: 0,
+            logs: {}
+          }]);
+        }
       };
 
       const saveHabit = async (e) => {
@@ -224,28 +290,17 @@
             }]);
           }
         }
-
         setShowHabitModal(false);
       };
 
-      const deleteHabit = async (id, e) => {
-        e.stopPropagation();
-        if (!confirm('האם למחוק הרגל זה לצמיתות מהבסיס נתונים?')) return;
-
-        const updated = habits.filter(h => h.id !== id);
-        setHabits(updated);
-        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
-
-        if (supabase) {
-          await supabase.from('habits').delete().eq('id', id);
-        }
-      };
-
+      // --- CHORES ACTIONS ---
       const toggleChore = async (id) => {
         const target = chores.find(c => c.id === id);
         if (!target) return;
 
         const newDone = !target.done;
+        if (newDone) playSuccessSound();
+
         setChores(chores.map(c => c.id === id ? { ...c, done: newDone } : c));
 
         if (supabase) {
@@ -253,36 +308,84 @@
         }
       };
 
-      const addChore = async (e) => {
+      const openAddChoreModal = () => {
+        setEditingChore(null);
+        setNewChoreTitle('');
+        setNewChoreAssignee(currentUser);
+        setNewChoreDueDate(todayDateStr);
+        setShowChoreModal(true);
+      };
+
+      const openEditChoreModal = (chore, e) => {
+        e.stopPropagation();
+        setEditingChore(chore);
+        setNewChoreTitle(chore.title);
+        setNewChoreAssignee(chore.assignedTo);
+        setNewChoreDueDate(chore.dueDate || todayDateStr);
+        setShowChoreModal(true);
+      };
+
+      const saveChore = async (e) => {
         e.preventDefault();
         if (!newChoreTitle.trim()) return;
 
-        const chore = {
-          id: Date.now().toString(),
-          title: newChoreTitle,
-          assignedTo: newChoreAssignee,
-          done: false
-        };
+        if (editingChore) {
+          const updated = chores.map(c => c.id === editingChore.id ? {
+            ...c,
+            title: newChoreTitle,
+            assignedTo: newChoreAssignee,
+            dueDate: newChoreDueDate
+          } : c);
+          setChores(updated);
 
-        setChores([...chores, chore]);
-        setNewChoreTitle('');
-
-        if (supabase) {
-          await supabase.from('chores').insert([{
-            id: chore.id,
-            title: chore.title,
-            assigned_to: chore.assignedTo,
+          if (supabase) {
+            await supabase.from('chores').update({
+              title: newChoreTitle,
+              assigned_to: newChoreAssignee,
+              due_date: newChoreDueDate
+            }).eq('id', editingChore.id);
+          }
+        } else {
+          const chore = {
+            id: Date.now().toString(),
+            title: newChoreTitle,
+            assignedTo: newChoreAssignee,
+            dueDate: newChoreDueDate,
             done: false
-          }]);
+          };
+          setChores([...chores, chore]);
+
+          if (supabase) {
+            await supabase.from('chores').insert([{
+              id: chore.id,
+              title: chore.title,
+              assigned_to: chore.assignedTo,
+              due_date: chore.dueDate,
+              done: false
+            }]);
+          }
         }
+        setShowChoreModal(false);
       };
 
-      const deleteChore = async (id, e) => {
-        e.stopPropagation();
-        setChores(chores.filter(c => c.id !== id));
-        if (supabase) {
-          await supabase.from('chores').delete().eq('id', id);
+      // --- CONFIRMED DELETE HANDLER ---
+      const confirmExecuteDelete = async () => {
+        if (!deleteTarget) return;
+
+        if (deleteTarget.type === 'habit') {
+          const updated = habits.filter(h => h.id !== deleteTarget.id);
+          setHabits(updated);
+          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+          if (supabase) await supabase.from('habits').delete().eq('id', deleteTarget.id);
+        } else if (deleteTarget.type === 'chore') {
+          setChores(chores.filter(c => c.id !== deleteTarget.id));
+          if (supabase) await supabase.from('chores').delete().eq('id', deleteTarget.id);
+        } else if (deleteTarget.type === 'event') {
+          const currentEvents = calendarEvents[selectedDate] || [];
+          const updated = currentEvents.filter((_, i) => i !== deleteTarget.extra);
+          setCalendarEvents({ ...calendarEvents, [selectedDate]: updated });
         }
+        setDeleteTarget(null);
       };
 
       const toggleDaySelection = (dayId) => {
@@ -307,12 +410,6 @@
         setNewEventText('');
       };
 
-      const deleteCalendarEvent = (idx) => {
-        const currentEvents = calendarEvents[selectedDate] || [];
-        const updated = currentEvents.filter((_, i) => i !== idx);
-        setCalendarEvents({ ...calendarEvents, [selectedDate]: updated });
-      };
-
       const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
       const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
 
@@ -324,6 +421,7 @@
 
       const totalCompletedToday = habits.filter(h => h.logs && h.logs[todayKey]).length;
       const progressPercent = habits.length > 0 ? Math.round((totalCompletedToday / habits.length) * 100) : 0;
+      const maxStreakOverall = habits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
 
       const filteredHabits = habits.filter(h => {
         const isDone = !!(h.logs && h.logs[todayKey]);
@@ -392,13 +490,29 @@
           {/* TAB 1: HABITS */}
           {activeTab === 'habits' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              {/* QUICK HABITS TEMPLATES */}
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-bold text-slate-400 flex items-center gap-1">🚀 הוספה מהירה בלחיצה:</h4>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {QUICK_TEMPLATES.map((tmpl, i) => (
+                    <button
+                      key={i}
+                      onClick={() => addQuickHabit(tmpl)}
+                      className="whitespace-nowrap bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-slate-200 text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm shrink-0"
+                    >
+                      <span className="text-emerald-400">+</span> {tmpl.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
                 <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-medium">
                   <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg ${filter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הכל</button>
                   <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
                   <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
                 </div>
-                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל</button>
+                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל מותאם</button>
               </div>
 
               <div className="space-y-3">
@@ -411,7 +525,7 @@
                     const isDone = !!(habit.logs && habit.logs[todayKey]);
                     return (
                       <div key={habit.id} onClick={() => toggleHabit(habit.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
-                        <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>
+                        <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950 scale-105' : 'border-slate-600 bg-slate-950'}`}>
                           {isDone && <span className="font-black text-xs">✓</span>}
                         </div>
 
@@ -438,7 +552,7 @@
                               ✏️ ערוך
                             </button>
                             <button 
-                              onClick={(e) => deleteHabit(habit.id, e)}
+                              onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'habit', id: habit.id }); }}
                               className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
                             >
                               🗑️ מחק
@@ -456,31 +570,42 @@
           {/* TAB 2: CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
-              <form onSubmit={addChore} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
-                <h3 className="text-xs font-bold text-slate-300">הוספת מטלת בית זוגית</h3>
-                <div className="flex gap-2">
-                  <input type="text" placeholder="מה צריך לעשות בבית?" value={newChoreTitle} onChange={(e) => setNewChoreTitle(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  <select value={newChoreAssignee} onChange={(e) => setNewChoreAssignee(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none">
-                    <option value="נועה">נועה</option>
-                    <option value="רונאל">רונאל</option>
-                  </select>
-                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs">הוסף</button>
+              <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200">משימות בית זוגיות</h3>
+                  <p className="text-[11px] text-slate-400">מסונכרנות בין נועה לרונאל ב-DB</p>
                 </div>
-              </form>
+                <button onClick={openAddChoreModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">
+                  + משימה חדשה
+                </button>
+              </div>
 
               <div className="space-y-2.5">
-                {chores.map(chore => (
-                  <div key={chore.id} onClick={() => toggleChore(chore.id)} className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${chore.done ? 'bg-slate-950/50 border-slate-900 opacity-60' : 'bg-slate-900 border-slate-800'}`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>{chore.done && <span className="font-bold text-xs">✓</span>}</div>
-                      <span className={`text-sm font-medium ${chore.done ? 'line-through text-slate-500' : 'text-slate-100'}`}>{chore.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${chore.assignedTo === 'נועה' ? 'bg-purple-500/10 border-purple-500/30 text-purple-300' : 'bg-blue-500/10 border-blue-500/30 text-blue-300'}`}>👤 {chore.assignedTo}</span>
-                      <button onClick={(e) => deleteChore(chore.id, e)} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
-                    </div>
+                {chores.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                    אין משימות בית זוגיות. לחצי על "+ משימה חדשה" כדי להוסיף!
                   </div>
-                ))}
+                ) : (
+                  chores.map(chore => (
+                    <div key={chore.id} onClick={() => toggleChore(chore.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${chore.done ? 'bg-slate-950/50 border-slate-900 opacity-60' : 'bg-slate-900 border-slate-800'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>{chore.done && <span className="font-bold text-xs">✓</span>}</div>
+                        <div>
+                          <span className={`text-sm font-semibold block ${chore.done ? 'line-through text-slate-500' : 'text-slate-100'}`}>{chore.title}</span>
+                          {chore.dueDate && <span className="text-[10px] text-slate-400">📅 יעד: {chore.dueDate}</span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${chore.assignedTo === 'נועה' ? 'bg-purple-500/10 border-purple-500/30 text-purple-300' : 'bg-blue-500/10 border-blue-500/30 text-blue-300'}`}>
+                          👤 {chore.assignedTo}
+                        </span>
+                        <button onClick={(e) => openEditChoreModal(chore, e)} className="text-slate-400 hover:text-emerald-400 p-1 text-xs">✏️</button>
+                        <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'chore', id: chore.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -488,7 +613,7 @@
           {/* TAB 3: CALENDAR */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4">
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4 shadow-lg">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <button onClick={() => setCurrentMonth(new Date(year, month - 1, 1))} className="text-xs bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-emerald-400 font-bold">הקודם</button>
                   <h3 className="font-bold text-sm text-white">{monthNames[month]} {year}</h3>
@@ -547,7 +672,7 @@
                           <span className="text-emerald-400">📌</span>
                           <span>{ev}</span>
                         </div>
-                        <button onClick={() => deleteCalendarEvent(idx)} className="text-red-400 hover:text-red-300 text-xs">🗑️</button>
+                        <button onClick={() => setDeleteTarget({ type: 'event', id: selectedDate, extra: idx })} className="text-red-400 hover:text-red-300 text-xs">🗑️</button>
                       </div>
                     ))
                   )}
@@ -556,33 +681,65 @@
             </div>
           )}
 
+          {/* TAB 4: STATS */}
           {activeTab === 'stats' && (
-            <div className="space-y-5">
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
-                <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5"><span>🏆</span> מדליות והישגים</h3>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {BADGES.map(b => (
-                    <div key={b.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-center gap-2.5">
-                      <span className="text-2xl">{b.icon}</span>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-200">{b.name}</h4>
-                        <p className="text-[10px] text-slate-400">{b.desc}</p>
-                      </div>
-                    </div>
-                  ))}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
+                  <span className="text-xs text-slate-400 font-semibold">אחוז השלמה יומית</span>
+                  <div className="text-2xl font-black text-emerald-400 mt-1">{progressPercent}%</div>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
+                  <span className="text-xs text-slate-400 font-semibold">שיא רצף (Streak)</span>
+                  <div className="text-2xl font-black text-amber-400 mt-1">🔥 {maxStreakOverall} ימים</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>📈</span> סיכום פעילות</h3>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">סה"כ הרגלים פעילים:</span>
+                    <span className="font-bold text-white">{habits.length}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5 border-b border-slate-800">
+                    <span className="text-slate-400">הרגלים שבוצעו היום:</span>
+                    <span className="font-bold text-emerald-400">{totalCompletedToday} מתוך {habits.length}</span>
+                  </div>
+                  <div className="flex justify-between py-1.5">
+                    <span className="text-slate-400">משימות בית פתוחות:</span>
+                    <span className="font-bold text-amber-400">{chores.filter(c => !c.done).length}</span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ADD / EDIT HABIT MODAL WITH ENHANCED TIME & DATE PICKER */}
+          {/* CONFIRM DELETE MODAL */}
+          {deleteTarget && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl">
+                <div className="text-3xl">⚠️</div>
+                <h3 className="font-bold text-base text-white">אישור מחיקה</h3>
+                <p className="text-xs text-slate-300">האם אתה בטוח שברצונך למחוק פריט זה? הפעולה תמחק את המידע גם מהבסיס נתונים.</p>
+                <div className="flex gap-2 pt-2">
+                  <button onClick={confirmExecuteDelete} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2 rounded-xl text-xs transition-all">
+                    כן, מחק
+                  </button>
+                  <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2 rounded-xl text-xs transition-all">
+                    ביטול
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADD / EDIT HABIT MODAL */}
           {showHabitModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                  <h3 className="font-bold text-base text-white">
-                    {editingHabit ? 'עריכת הרגל' : 'הוספת הרגל חדש'}
-                  </h3>
+                  <h3 className="font-bold text-base text-white">{editingHabit ? 'עריכת הרגל' : 'הוספת הרגל חדש'}</h3>
                   <button onClick={() => setShowHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
                 </div>
 
@@ -597,85 +754,79 @@
                     <input type="text" placeholder="למשל: לנעול נעלי ספורט" value={newMicro} onChange={e => setNewMicro(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
                   </div>
 
-                  {/* QUICK & EASY TIME PICKER */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">שעת התחלה</label>
                     <div className="flex items-center gap-2 mb-1.5">
-                      <input 
-                        type="time" 
-                        value={newStartTime} 
-                        onChange={e => setNewStartTime(e.target.value)} 
-                        className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none flex-1 text-center" 
-                      />
+                      <input type="time" value={newStartTime} onChange={e => setNewStartTime(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none flex-1 text-center" />
                     </div>
                     <div className="flex justify-between gap-1">
                       {QUICK_TIMES.map(t => (
-                        <button
-                          type="button"
-                          key={t}
-                          onClick={() => setNewStartTime(t)}
-                          className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${
-                            newStartTime === t ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
+                        <button type="button" key={t} onClick={() => setNewStartTime(t)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${newStartTime === t ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
                           {t}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* QUICK & EASY DATE PICKER */}
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך התחלה</label>
-                    <input 
-                      type="date" 
-                      value={newStartDate} 
-                      onChange={e => setNewStartDate(e.target.value)} 
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none mb-1.5 text-center" 
-                    />
+                    <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none mb-1.5 text-center" />
                     <div className="flex gap-1.5">
-                      <button 
-                        type="button" 
-                        onClick={() => setQuickDate(0)} 
-                        className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${
-                          newStartDate === todayDateStr ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'
-                        }`}
-                      >
-                        היום
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setQuickDate(1)} 
-                        className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                      >
-                        מחר
-                      </button>
+                      <button type="button" onClick={() => setQuickDate(0)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg border ${newStartDate === todayDateStr ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>היום</button>
+                      <button type="button" onClick={() => setQuickDate(1)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-400">מחר</button>
                     </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">ימי חזרה בשבוע</label>
                     <div className="flex justify-between gap-1">
-                      {DAYS_OF_WEEK.map(day => {
-                        const isSelected = selectedDays.includes(day.id);
-                        return (
-                          <button
-                            type="button"
-                            key={day.id}
-                            onClick={() => toggleDaySelection(day.id)}
-                            className={`w-8 h-8 rounded-xl font-bold text-xs border transition-all ${
-                              isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'bg-slate-950 border-slate-800 text-slate-400'
-                            }`}
-                          >
-                            {day.label}
-                          </button>
-                        );
-                      })}
+                      {DAYS_OF_WEEK.map(day => (
+                        <button type="button" key={day.id} onClick={() => toggleDaySelection(day.id)} className={`w-8 h-8 rounded-xl font-bold text-xs border transition-all ${selectedDays.includes(day.id) ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
+                          {day.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
-                    {editingHabit ? 'עדכן הרגל ב-Supabase' : 'שמור הרגל ב-Supabase'}
+                    {editingHabit ? 'עדכן הרגל ב-DB' : 'שמור הרגל ב-DB'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* ADD / EDIT CHORE MODAL */}
+          {showChoreModal && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-base text-white">{editingChore ? 'עריכת משימת בית' : 'הוספת משימת בית'}</h3>
+                  <button onClick={() => setShowChoreModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={saveChore} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">שם המשימה</label>
+                    <input type="text" required placeholder="למשל: לקנות מצרכים לשבת" value={newChoreTitle} onChange={e => setNewChoreTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">משויך ל-</label>
+                      <select value={newChoreAssignee} onChange={e => setNewChoreAssignee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold outline-none">
+                        <option value="נועה">נועה</option>
+                        <option value="רונאל">רונאל</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך יעד</label>
+                      <input type="date" value={newChoreDueDate} onChange={e => setNewChoreDueDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none" />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
+                    {editingChore ? 'עדכן משימה ב-DB' : 'שמור משימה ב-DB'}
                   </button>
                 </form>
               </div>
