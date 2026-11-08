@@ -32,7 +32,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     const SUPABASE_URL = "https://wwicfhomrexzczlhqlgx.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_5fELLN6m3tMcIZxRmLNIYQ_OwX13l4i";
@@ -70,6 +70,9 @@
 
     function App() {
       const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('focus_flow_user') || null);
+      const [notificationPermission, setNotificationPermission] = useState(
+        typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
+      );
       
       const [activeTab, setActiveTab] = useState('habits');
       const [habits, setHabits] = useState([]);
@@ -116,11 +119,22 @@
       // Confirm Delete Modal State
       const [deleteTarget, setDeleteTarget] = useState(null);
 
+      const requestNotificationPermission = async () => {
+        if ('Notification' in window) {
+          const permission = await Notification.requestPermission();
+          setNotificationPermission(permission);
+          if (permission === 'granted') {
+            new Notification("FocusHabits", { body: "התראות הופעל בהצלחה! מעכשיו תקבל תזכורות בזמן אמת." });
+          }
+        }
+      };
+
       const handleSelectUser = (userName) => {
         setCurrentUser(userName);
         setNewHabitUser(userName);
         setNewChoreAssignee(userName);
         localStorage.setItem('focus_flow_user', userName);
+        requestNotificationPermission();
       };
 
       const handleSwitchUser = () => {
@@ -185,6 +199,46 @@
         }
         fetchData();
       }, []);
+
+      // תזמון התראות חסכוני בסוללה באמצעות setTimeout מדויק
+      useEffect(() => {
+        if (!currentUser || notificationPermission !== 'granted') return;
+
+        const timers = [];
+        const now = new Date();
+        const currentDStr = now.toISOString().split('T')[0];
+        const currentDayOfWeek = now.getDay();
+
+        const userHabits = habits.filter(h => h.userName === currentUser || h.userName === 'שניהם');
+
+        userHabits.forEach(h => {
+          const isTodayValid = (h.days && h.days.length > 0 && h.days.includes(currentDayOfWeek)) || (h.startDate === currentDStr);
+          if (isTodayValid && h.startTime) {
+            const [hours, minutes] = h.startTime.split(':').map(Number);
+            const targetTime = new Date();
+            targetTime.setHours(hours, minutes, 0, 0);
+
+            const diffMs = targetTime.getTime() - now.getTime();
+            // אם השעה טרם הגיעה היום
+            if (diffMs > 0) {
+              const timerId = setTimeout(() => {
+                const isDone = h.logs && h.logs[currentDStr];
+                if (!isDone) {
+                  new Notification(`תזכורת להרגל: ${h.title}`, {
+                    body: h.microHabit ? `💡 צעד קטן: ${h.microHabit}` : 'הגיע הזמן לבצע את ההרגל שלך!',
+                    icon: 'https://cdn-icons-png.flaticon.com/512/3176/3176363.png'
+                  });
+                }
+              }, diffMs);
+              timers.push(timerId);
+            }
+          }
+        });
+
+        return () => {
+          timers.forEach(t => clearTimeout(t));
+        };
+      }, [habits, currentUser, notificationPermission]);
 
       if (!currentUser) {
         return (
@@ -648,7 +702,6 @@
       const progressPercent = sortedViewHabits.length > 0 ? Math.round((totalCompletedView / sortedViewHabits.length) * 100) : 0;
       const maxStreakOverall = userHabits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
 
-      // --- חישוב סטטיסטיקות שבועיות וחודשיות ---
       const calculateStatsForDays = (numDays) => {
         let totalPossible = 0;
         let totalCompleted = 0;
@@ -727,6 +780,15 @@
                 </button>
               </div>
             </div>
+
+            {notificationPermission !== 'granted' && (
+              <button 
+                onClick={requestNotificationPermission}
+                className="w-full bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 font-bold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+              >
+                <span>🔔</span> לחצי כאן להפעלת התראות ודחיפת תזכורות למכשיר
+              </button>
+            )}
 
             {activeTab === 'habits' && (
               <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
@@ -1129,7 +1191,6 @@
                 </div>
               </div>
 
-              {/* רצפים לפי הרגל ספציפי */}
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
                 <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>🔥</span> רצפים (Streaks) לפי הרגל של {currentUser}</h3>
                 <div className="space-y-2">
