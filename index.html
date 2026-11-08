@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>פוקוס-פלו | הרגלים, משימות זוגיות ויומן</title>
+  <title>פוקוס-פלו | FocusFlow</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
@@ -15,12 +15,16 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
   <!-- Supabase Client -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .heatmap-grid { display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); grid-auto-flow: column; gap: 3px; }
+  </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen">
+<body class="bg-slate-950 text-slate-100 min-h-screen">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useMemo } = React;
 
     // Supabase Credentials
     const SUPABASE_URL = "https://wwicfhomrexzczlhqlgx.supabase.co";
@@ -30,18 +34,27 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
+    const BADGES = [
+      { id: 'first_step', name: 'צעד ראשון', desc: 'השלמת הרגל ראשון', icon: '🌱' },
+      { id: 'streak_3', name: 'בונה תנופה', desc: 'רצף פעיל של 3 ימים', icon: '⚡' },
+      { id: 'streak_7', name: 'לוחם 7 ימים', desc: 'שמירה על רצף של 7 ימים', icon: '🔥' },
+      { id: 'shield_user', name: 'מאסטר המגן', desc: 'שימוש במגן מנוחה לשמירה על רצף', icon: '🛡️' },
+      { id: 'century', name: 'מועדון ה-100', desc: 'השלמת 100 הרגלים מצטברים', icon: '👑' }
+    ];
+
     function App() {
-      const [activeTab, setActiveTab] = useState('habits'); // 'habits' | 'chores' | 'calendar'
+      const [activeTab, setActiveTab] = useState('habits'); // 'habits' | 'chores' | 'calendar' | 'stats'
       const [currentUser, setCurrentUser] = useState('נועה'); // 'נועה' | 'רונאל'
       
       // Habits State
       const [habits, setHabits] = useState([]);
       const [filter, setFilter] = useState('all');
       const [showAddHabitModal, setShowAddHabitModal] = useState(false);
-      const [newHabitTitle, setNewHabitTitle] = useState('');
-      const [newHabitMicro, setNewHabitMicro] = useState('');
+      const [newTitle, setNewTitle] = useState('');
+      const [newMicro, setNewMicro] = useState('');
+      const [newCategory, setNewCategory] = useState('בריאות וכושר');
 
-      // Chores State (Household Tasks)
+      // Chores State
       const [chores, setChores] = useState(() => {
         const saved = localStorage.getItem('focus_flow_chores');
         return saved ? JSON.parse(saved) : [
@@ -53,19 +66,19 @@
       const [newChoreTitle, setNewChoreTitle] = useState('');
       const [newChoreAssignee, setNewChoreAssignee] = useState('נועה');
 
-      // Calendar & Scheduled Tasks State
+      // Calendar State
       const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
       const [calendarEvents, setCalendarEvents] = useState(() => {
         const saved = localStorage.getItem('focus_flow_calendar');
         return saved ? JSON.parse(saved) : {
-          [new Date().toISOString().split('T')[0]]: ['אימון שבועי', 'תזכורת לפגישה']
+          [new Date().toISOString().split('T')[0]]: ['אימון כושר', 'פגישה שבועית']
         };
       });
       const [newEventText, setNewEventText] = useState('');
 
       const todayKey = new Date().toISOString().split('T')[0];
 
-      // Load Habits from Supabase / LocalStorage
+      // Fetch Habits from Supabase / LocalStorage
       useEffect(() => {
         async function fetchHabits() {
           if (supabase) {
@@ -81,16 +94,18 @@
                 return;
               }
             } catch (err) {
-              console.error("Supabase fetch error:", err);
+              console.error("Supabase error:", err);
             }
           }
           const saved = localStorage.getItem('focus_flow_habits');
-          setHabits(saved ? JSON.parse(saved) : []);
+          setHabits(saved ? JSON.parse(saved) : [
+            { id: '1', title: 'אימון ריצה / הליכה', microHabit: 'לנעול נעלי ספורט ולצאת ל-2 דקות', streak: 5, category: 'בריאות וכושר', logs: {} },
+            { id: '2', title: 'קריאת ספר', microHabit: 'לקרוא עמוד אחד בלבד', streak: 12, category: 'מיינדפולנס', logs: {} }
+          ]);
         }
         fetchHabits();
       }, []);
 
-      // Persist Chores & Calendar to LocalStorage
       useEffect(() => {
         localStorage.setItem('focus_flow_chores', JSON.stringify(chores));
       }, [chores]);
@@ -99,7 +114,7 @@
         localStorage.setItem('focus_flow_calendar', JSON.stringify(calendarEvents));
       }, [calendarEvents]);
 
-      // Habit Actions
+      // Actions
       const toggleHabit = async (id) => {
         const updated = habits.map(h => {
           if (h.id !== id) return h;
@@ -137,11 +152,12 @@
 
       const addHabit = async (e) => {
         e.preventDefault();
-        if (!newHabitTitle.trim()) return;
+        if (!newTitle.trim()) return;
         const habit = {
           id: Date.now().toString(),
-          title: newHabitTitle,
-          microHabit: newHabitMicro,
+          title: newTitle,
+          microHabit: newMicro,
+          category: newCategory,
           streak: 0,
           logs: {}
         };
@@ -158,12 +174,11 @@
             logs: {}
           }]);
         }
-        setNewHabitTitle('');
-        setNewHabitMicro('');
+        setNewTitle('');
+        setNewMicro('');
         setShowAddHabitModal(false);
       };
 
-      // Chore Actions
       const toggleChore = (id) => {
         setChores(chores.map(c => c.id === id ? { ...c, done: !c.done } : c));
       };
@@ -171,25 +186,15 @@
       const addChore = (e) => {
         e.preventDefault();
         if (!newChoreTitle.trim()) return;
-        const chore = {
-          id: Date.now().toString(),
-          title: newChoreTitle,
-          assignedTo: newChoreAssignee,
-          done: false
-        };
-        setChores([...chores, chore]);
+        setChores([...chores, { id: Date.now().toString(), title: newChoreTitle, assignedTo: newChoreAssignee, done: false }]);
         setNewChoreTitle('');
       };
 
-      // Calendar Actions
       const addCalendarEvent = (e) => {
         e.preventDefault();
         if (!newEventText.trim()) return;
         const currentEvents = calendarEvents[selectedDate] || [];
-        setCalendarEvents({
-          ...calendarEvents,
-          [selectedDate]: [...currentEvents, newEventText]
-        });
+        setCalendarEvents({ ...calendarEvents, [selectedDate]: [...currentEvents, newEventText] });
         setNewEventText('');
       };
 
@@ -198,18 +203,20 @@
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
-          {/* Header & Logged-in User */}
-          <header className="bg-slate-800 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
+          {/* Top Header */}
+          <header className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                  <span>⚡</span> פוקוס-פלו
+                <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
+                  <span className="text-emerald-400">⚡</span> פוקוס-פלו
                 </h1>
-                <p className="text-xs text-emerald-400 font-medium">☁️ מסונכרן בענן</p>
+                <p className="text-xs text-emerald-400/90 font-medium mt-0.5 flex items-center gap-1">
+                  <span>☁️</span> סנכרון זוגי פעיל
+                </p>
               </div>
 
-              {/* User Switcher */}
-              <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl">
+              {/* User Selector */}
+              <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-2xl flex items-center gap-2">
                 <span className="text-xs text-slate-400">משתמש:</span>
                 <select 
                   value={currentUser} 
@@ -224,14 +231,14 @@
 
             {/* Daily Progress */}
             {activeTab === 'habits' && (
-              <div className="space-y-1 pt-1 border-t border-slate-700/50">
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
                 <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-300">התקדמות הרגלים להיום</span>
-                  <span className="text-emerald-400">{progressPercent}%</span>
+                  <span className="text-slate-300">התקדמות יומית</span>
+                  <span className="text-emerald-400 font-bold">{progressPercent}%</span>
                 </div>
-                <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
                   <div 
-                    className="h-full bg-gradient-to-l from-emerald-400 to-teal-500 rounded-full transition-all duration-500"
+                    className="h-full bg-gradient-to-l from-emerald-400 to-teal-500 rounded-full transition-all duration-500 shadow-sm"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
@@ -240,30 +247,38 @@
           </header>
 
           {/* Navigation Tabs */}
-          <nav className="grid grid-cols-3 gap-1.5 bg-slate-800 p-1.5 rounded-2xl border border-slate-700/80 text-xs font-bold">
+          <nav className="grid grid-cols-4 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-[11px] font-bold">
             <button
               onClick={() => setActiveTab('habits')}
-              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${
                 activeTab === 'habits' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <span>⚡</span> הרגלים
+              <span className="text-base">⚡</span> הרגלים
             </button>
             <button
               onClick={() => setActiveTab('chores')}
-              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${
                 activeTab === 'chores' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <span>🏠</span> משימות זוגיות
+              <span className="text-base">🏠</span> משימות
             </button>
             <button
               onClick={() => setActiveTab('calendar')}
-              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${
                 activeTab === 'calendar' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
               }`}
             >
-              <span>📅</span> יומן
+              <span className="text-base">📅</span> יומן
+            </button>
+            <button
+              onClick={() => setActiveTab('stats')}
+              className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${
+                activeTab === 'stats' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span className="text-base">📊</span> נתונים
             </button>
           </nav>
 
@@ -271,7 +286,7 @@
           {activeTab === 'habits' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700/80 text-xs font-medium">
+                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-medium">
                   <button 
                     onClick={() => setFilter('all')}
                     className={`px-3 py-1 rounded-lg ${filter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}
@@ -293,31 +308,31 @@
                 </div>
                 <button 
                   onClick={() => setShowAddHabitModal(true)}
-                  className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 shadow-md"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs flex items-center gap-1 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
                 >
                   + הרגל
                 </button>
               </div>
 
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 {habits.map(habit => {
                   const isDone = !!(habit.logs && habit.logs[todayKey]);
                   return (
                     <div 
                       key={habit.id}
                       onClick={() => toggleHabit(habit.id)}
-                      className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
-                        isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-800 border-slate-700'
+                      className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 select-none flex items-start gap-3.5 ${
+                        isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800 hover:border-slate-700 shadow-lg'
                       }`}
                     >
-                      <div className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                        isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-500 bg-slate-900'
+                      <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                        isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'
                       }`}>
-                        {isDone && <span className="font-bold text-xs">✓</span>}
+                        {isDone && <span className="font-black text-xs">✓</span>}
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <h3 className={`font-semibold text-sm ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className={`font-bold text-sm truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>
                             {habit.title}
                           </h3>
                           <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
@@ -325,7 +340,9 @@
                           </span>
                         </div>
                         {habit.microHabit && (
-                          <p className="text-xs text-emerald-400/90 mt-1">💡 {habit.microHabit}</p>
+                          <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20">
+                            <span>💡</span> {habit.microHabit}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -335,45 +352,45 @@
             </div>
           )}
 
-          {/* TAB 2: HOUSEHOLD CHORES (זוגי) */}
+          {/* TAB 2: HOUSEHOLD CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
-              <form onSubmit={addChore} className="bg-slate-800 p-3 rounded-2xl border border-slate-700 space-y-2">
-                <h3 className="text-xs font-bold text-slate-300">הוספת מטלת בית חדשה</h3>
+              <form onSubmit={addChore} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-lg">
+                <h3 className="text-xs font-bold text-slate-300">הוספת מטלת בית זוגית</h3>
                 <div className="flex gap-2">
                   <input 
                     type="text"
                     placeholder="מה צריך לעשות בבית?"
                     value={newChoreTitle}
                     onChange={(e) => setNewChoreTitle(e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                   <select 
                     value={newChoreAssignee}
                     onChange={(e) => setNewChoreAssignee(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none"
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
                   >
                     <option value="נועה">נועה</option>
                     <option value="רונאל">רונאל</option>
                   </select>
-                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs">
+                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs">
                     הוסף
                   </button>
                 </div>
               </form>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {chores.map(chore => (
                   <div 
                     key={chore.id}
                     onClick={() => toggleChore(chore.id)}
-                    className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                      chore.done ? 'bg-slate-900/50 border-slate-800 opacity-60' : 'bg-slate-800 border-slate-700'
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                      chore.done ? 'bg-slate-950/50 border-slate-900 opacity-60' : 'bg-slate-900 border-slate-800'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                        chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-500'
+                        chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'
                       }`}>
                         {chore.done && <span className="font-bold text-xs">✓</span>}
                       </div>
@@ -395,43 +412,43 @@
             </div>
           )}
 
-          {/* TAB 3: CALENDAR & SCHEDULED TASKS */}
+          {/* TAB 3: CALENDAR */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
-              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-3">
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-lg">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-slate-300">בחר תאריך לצפייה במשימות</h3>
+                  <h3 className="text-xs font-bold text-slate-300">בחר תאריך לצפייה/הוספה</h3>
                   <input 
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1 text-xs text-emerald-400 font-bold outline-none"
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none"
                   />
                 </div>
 
-                <form onSubmit={addCalendarEvent} className="flex gap-2 pt-2 border-t border-slate-700/60">
+                <form onSubmit={addCalendarEvent} className="flex gap-2 pt-2 border-t border-slate-800">
                   <input 
                     type="text"
-                    placeholder={`הוסף אירוע/תזכורת ל-${selectedDate}`}
+                    placeholder={`הוסף משימה/תזכורת ל-${selectedDate}`}
                     value={newEventText}
                     onChange={(e) => setNewEventText(e.target.value)}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
-                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs">
+                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs">
                     שמור
                   </button>
                 </form>
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400">אירועים ומשימות ליום זה ({selectedDate}):</h4>
+                <h4 className="text-xs font-bold text-slate-400">אירועים מתוזמנים ({selectedDate}):</h4>
                 {(!calendarEvents[selectedDate] || calendarEvents[selectedDate].length === 0) ? (
-                  <p className="text-xs text-slate-500 bg-slate-800/40 p-4 rounded-xl border border-dashed border-slate-700 text-center">
+                  <p className="text-xs text-slate-500 bg-slate-900/40 p-4 rounded-2xl border border-dashed border-slate-800 text-center">
                     אין משימות מתוזמנות לתאריך זה.
                   </p>
                 ) : (
                   calendarEvents[selectedDate].map((event, idx) => (
-                    <div key={idx} className="bg-slate-800 border border-slate-700 p-3 rounded-xl text-xs font-medium text-slate-200 flex items-center gap-2">
+                    <div key={idx} className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl text-xs font-semibold text-slate-200 flex items-center gap-2">
                       <span className="text-emerald-400">📌</span>
                       <span>{event}</span>
                     </div>
@@ -441,33 +458,86 @@
             </div>
           )}
 
+          {/* TAB 4: HEATMAP & BADGES STATS */}
+          {activeTab === 'stats' && (
+            <div className="space-y-5">
+              {/* Achievements / Badges */}
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-lg">
+                <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <span>🏆</span> מדליות והישגים
+                </h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {BADGES.map(b => (
+                    <div key={b.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-center gap-2.5">
+                      <span className="text-2xl">{b.icon}</span>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-200">{b.name}</h4>
+                        <p className="text-[10px] text-slate-400">{b.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Activity Heatmap Mock */}
+              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-lg">
+                <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <span>📊</span> מפת חום של פעילות (12 שבועות)
+                </h3>
+                <div className="flex justify-between text-[10px] text-slate-500">
+                  <span>פחות</span>
+                  <div className="flex gap-1 items-center">
+                    <span className="w-2.5 h-2.5 bg-slate-800 rounded-sm"></span>
+                    <span className="w-2.5 h-2.5 bg-emerald-900 rounded-sm"></span>
+                    <span className="w-2.5 h-2.5 bg-emerald-600 rounded-sm"></span>
+                    <span className="w-2.5 h-2.5 bg-emerald-400 rounded-sm"></span>
+                  </div>
+                  <span>יותר</span>
+                </div>
+                <div className="heatmap-grid h-28 pt-1">
+                  {Array.from({ length: 84 }).map((_, i) => {
+                    const level = (i % 7 === 0 || i % 5 === 0) ? (i % 3 + 1) : 0;
+                    const bgClass = level === 0 ? 'bg-slate-950' : level === 1 ? 'bg-emerald-950 border border-emerald-800/40' : level === 2 ? 'bg-emerald-600' : 'bg-emerald-400';
+                    return <div key={i} className={`rounded-sm ${bgClass}`} />
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Add Habit Modal */}
           {showAddHabitModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 max-w-sm w-full space-y-3">
-                <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-                  <h3 className="font-bold text-sm text-white">הוספת הרגל חדש</h3>
-                  <button onClick={() => setShowAddHabitModal(false)} className="text-slate-400">✕</button>
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-base text-white">הוספת הרגל חדש</h3>
+                  <button onClick={() => setShowAddHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
                 </div>
 
                 <form onSubmit={addHabit} className="space-y-3">
-                  <input 
-                    type="text" 
-                    required
-                    placeholder="שם ההרגל"
-                    value={newHabitTitle}
-                    onChange={e => setNewHabitTitle(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="מיקרו-הרגל (צעד של 2 דקות)"
-                    value={newHabitMicro}
-                    onChange={e => setNewHabitMicro(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none"
-                  />
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">שם ההרגל</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="למשל: אימון כושר"
+                      value={newTitle}
+                      onChange={e => setNewTitle(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">צעד קטן של 2 דקות (מיקרו-הרגל)</label>
+                    <input 
+                      type="text" 
+                      placeholder="למשל: לנעול נעלי ספורט"
+                      value={newMicro}
+                      onChange={e => setNewMicro(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
                   <div className="flex gap-2 pt-2">
-                    <button type="submit" className="flex-1 bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs">
+                    <button type="submit" className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition-all">
                       שמור הרגל
                     </button>
                   </div>
