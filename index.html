@@ -32,24 +32,21 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
-    // Web Audio API Sound Helper
     const playSuccessSound = () => {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-        osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.15); // E5
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.15, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start();
         osc.stop(ctx.currentTime + 0.3);
-      } catch (e) {
-        console.log("Audio not supported or blocked");
-      }
+      } catch (e) {}
     };
 
     const QUICK_TEMPLATES = [
@@ -95,17 +92,18 @@
       const [newChoreAssignee, setNewChoreAssignee] = useState('נועה');
       const [newChoreDueDate, setNewChoreDueDate] = useState(todayDateStr);
 
-      // Confirm Delete Modal State
-      const [deleteTarget, setDeleteTarget] = useState(null); // { type: 'habit'|'chore'|'event', id, extra }
-
-      // Calendar State
+      // Calendar Events State
       const [currentMonth, setCurrentMonth] = useState(new Date());
       const [selectedDate, setSelectedDate] = useState(todayDateStr);
-      const [calendarEvents, setCalendarEvents] = useState(() => {
-        const saved = localStorage.getItem('focus_flow_calendar');
-        return saved ? JSON.parse(saved) : { [todayDateStr]: ['אימון כושר', 'פגישה שבועית'] };
-      });
-      const [newEventText, setNewEventText] = useState('');
+      const [calendarEvents, setCalendarEvents] = useState([]);
+      const [showEventModal, setShowEventModal] = useState(false);
+      const [editingEvent, setEditingEvent] = useState(null);
+      const [newEventTitle, setNewEventTitle] = useState('');
+      const [newEventTime, setNewEventTime] = useState('10:00');
+      const [newEventAssignee, setNewEventAssignee] = useState('שניהם');
+
+      // Confirm Delete Modal State
+      const [deleteTarget, setDeleteTarget] = useState(null);
 
       const todayKey = todayDateStr;
 
@@ -124,9 +122,6 @@
                   days: item.days || [0, 1, 2, 3, 4, 5, 6],
                   logs: item.logs || {}
                 })));
-              } else {
-                const savedHabits = localStorage.getItem('focus_flow_habits');
-                if (savedHabits) setHabits(JSON.parse(savedHabits));
               }
 
               const { data: choresData } = await supabase.from('chores').select('*');
@@ -137,6 +132,18 @@
                   dueDate: item.due_date || todayDateStr
                 })));
               }
+
+              const { data: eventsData } = await supabase.from('calendar_events').select('*');
+              if (eventsData && eventsData.length > 0) {
+                setCalendarEvents(eventsData.map(item => ({
+                  id: item.id,
+                  title: item.title,
+                  date: item.event_date,
+                  time: item.event_time,
+                  assignedTo: item.assigned_to,
+                  done: item.done
+                })));
+              }
             } catch (err) {
               console.error("Supabase fetch error:", err);
             }
@@ -144,10 +151,6 @@
         }
         fetchData();
       }, []);
-
-      useEffect(() => {
-        localStorage.setItem('focus_flow_calendar', JSON.stringify(calendarEvents));
-      }, [calendarEvents]);
 
       // --- HABITS ACTIONS ---
       const toggleHabit = async (id) => {
@@ -171,7 +174,6 @@
         const updatedHabits = habits.map(h => h.id === id ? { ...h, logs: updatedLogs, streak: newStreak } : h);
 
         setHabits(updatedHabits);
-        localStorage.setItem('focus_flow_habits', JSON.stringify(updatedHabits));
 
         if (supabase) {
           await supabase.from('habits').upsert({
@@ -221,7 +223,6 @@
         };
         const updated = [...habits, habit];
         setHabits(updated);
-        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
 
         if (supabase) {
           await supabase.from('habits').insert([{
@@ -251,7 +252,6 @@
             days: selectedDays
           } : h);
           setHabits(updated);
-          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
 
           if (supabase) {
             await supabase.from('habits').update({
@@ -275,7 +275,6 @@
           };
           const updated = [...habits, habit];
           setHabits(updated);
-          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
 
           if (supabase) {
             await supabase.from('habits').insert([{
@@ -368,22 +367,98 @@
         setShowChoreModal(false);
       };
 
+      // --- CALENDAR EVENTS ACTIONS (POPUPS & USER ASSIGNMENT) ---
+      const openAddEventModal = () => {
+        setEditingEvent(null);
+        setNewEventTitle('');
+        setNewEventTime('10:00');
+        setNewEventAssignee(currentUser);
+        setShowEventModal(true);
+      };
+
+      const openEditEventModal = (ev, e) => {
+        e.stopPropagation();
+        setEditingEvent(ev);
+        setNewEventTitle(ev.title);
+        setNewEventTime(ev.time || '10:00');
+        setNewEventAssignee(ev.assignedTo || 'שניהם');
+        setShowEventModal(true);
+      };
+
+      const saveEvent = async (e) => {
+        e.preventDefault();
+        if (!newEventTitle.trim()) return;
+
+        if (editingEvent) {
+          const updated = calendarEvents.map(ev => ev.id === editingEvent.id ? {
+            ...ev,
+            title: newEventTitle,
+            time: newEventTime,
+            assignedTo: newEventAssignee,
+            date: selectedDate
+          } : ev);
+          setCalendarEvents(updated);
+
+          if (supabase) {
+            await supabase.from('calendar_events').update({
+              title: newEventTitle,
+              event_time: newEventTime,
+              assigned_to: newEventAssignee,
+              event_date: selectedDate
+            }).eq('id', editingEvent.id);
+          }
+        } else {
+          const newEv = {
+            id: Date.now().toString(),
+            title: newEventTitle,
+            date: selectedDate,
+            time: newEventTime,
+            assignedTo: newEventAssignee,
+            done: false
+          };
+          setCalendarEvents([...calendarEvents, newEv]);
+
+          if (supabase) {
+            await supabase.from('calendar_events').insert([{
+              id: newEv.id,
+              title: newEv.title,
+              event_date: newEv.date,
+              event_time: newEv.time,
+              assigned_to: newEv.assignedTo,
+              done: false
+            }]);
+          }
+        }
+        setShowEventModal(false);
+      };
+
+      const toggleEventDone = async (id) => {
+        const target = calendarEvents.find(ev => ev.id === id);
+        if (!target) return;
+
+        const newDone = !target.done;
+        if (newDone) playSuccessSound();
+
+        setCalendarEvents(calendarEvents.map(ev => ev.id === id ? { ...ev, done: newDone } : ev));
+
+        if (supabase) {
+          await supabase.from('calendar_events').update({ done: newDone }).eq('id', id);
+        }
+      };
+
       // --- CONFIRMED DELETE HANDLER ---
       const confirmExecuteDelete = async () => {
         if (!deleteTarget) return;
 
         if (deleteTarget.type === 'habit') {
-          const updated = habits.filter(h => h.id !== deleteTarget.id);
-          setHabits(updated);
-          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+          setHabits(habits.filter(h => h.id !== deleteTarget.id));
           if (supabase) await supabase.from('habits').delete().eq('id', deleteTarget.id);
         } else if (deleteTarget.type === 'chore') {
           setChores(chores.filter(c => c.id !== deleteTarget.id));
           if (supabase) await supabase.from('chores').delete().eq('id', deleteTarget.id);
         } else if (deleteTarget.type === 'event') {
-          const currentEvents = calendarEvents[selectedDate] || [];
-          const updated = currentEvents.filter((_, i) => i !== deleteTarget.extra);
-          setCalendarEvents({ ...calendarEvents, [selectedDate]: updated });
+          setCalendarEvents(calendarEvents.filter(ev => ev.id !== deleteTarget.id));
+          if (supabase) await supabase.from('calendar_events').delete().eq('id', deleteTarget.id);
         }
         setDeleteTarget(null);
       };
@@ -400,14 +475,6 @@
         const d = new Date();
         d.setDate(d.getDate() + offsetDays);
         setNewStartDate(d.toISOString().split('T')[0]);
-      };
-
-      const addCalendarEvent = (e) => {
-        e.preventDefault();
-        if (!newEventText.trim()) return;
-        const currentEvents = calendarEvents[selectedDate] || [];
-        setCalendarEvents({ ...calendarEvents, [selectedDate]: [...currentEvents, newEventText] });
-        setNewEventText('');
       };
 
       const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
@@ -429,6 +496,8 @@
         if (filter === 'completed') return isDone;
         return true;
       });
+
+      const selectedDateEvents = calendarEvents.filter(ev => ev.date === selectedDate);
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
@@ -490,7 +559,6 @@
           {/* TAB 1: HABITS */}
           {activeTab === 'habits' && (
             <div className="space-y-4">
-              {/* QUICK HABITS TEMPLATES */}
               <div className="space-y-2">
                 <h4 className="text-[11px] font-bold text-slate-400 flex items-center gap-1">🚀 הוספה מהירה בלחיצה:</h4>
                 <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -610,7 +678,7 @@
             </div>
           )}
 
-          {/* TAB 3: CALENDAR */}
+          {/* TAB 3: CALENDAR (WITH POPUP ADD/EDIT & ASSIGNMENT) */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4 shadow-lg">
@@ -631,7 +699,7 @@
                     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                     const isSelected = selectedDate === dateStr;
                     const isToday = todayKey === dateStr;
-                    const hasEvents = calendarEvents[dateStr] && calendarEvents[dateStr].length > 0;
+                    const hasEvents = calendarEvents.some(ev => ev.date === dateStr);
 
                     return (
                       <button
@@ -653,26 +721,40 @@
 
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <h4 className="text-xs font-bold text-slate-300">אירועים ליום {selectedDate}:</h4>
-                  <span className="text-[11px] font-bold text-emerald-400">{(calendarEvents[selectedDate] && calendarEvents[selectedDate].length) || 0} משימות</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-200">אירועים ליום {selectedDate}:</h4>
+                    <span className="text-[10px] text-slate-400">{selectedDateEvents.length} משימות מתוזמנות</span>
+                  </div>
+                  <button onClick={openAddEventModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">
+                    + אירוע ליומן
+                  </button>
                 </div>
 
-                <form onSubmit={addCalendarEvent} className="flex gap-2">
-                  <input type="text" placeholder="הוסף משימה לתאריך..." value={newEventText} onChange={(e) => setNewEventText(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  <button type="submit" className="bg-emerald-500 text-slate-950 font-bold px-3 py-2 rounded-xl text-xs">שמור</button>
-                </form>
-
                 <div className="space-y-2 pt-1">
-                  {(!calendarEvents[selectedDate] || calendarEvents[selectedDate].length === 0) ? (
-                    <p className="text-xs text-slate-500 text-center py-3">אין משימות מתוזמנות לתאריך זה.</p>
+                  {selectedDateEvents.length === 0 ? (
+                    <p className="text-xs text-slate-500 text-center py-4 border border-dashed border-slate-800 rounded-2xl">
+                      אין משימות מתוזמנות לתאריך זה. לחצי על "+ אירוע ליומן" להוספה!
+                    </p>
                   ) : (
-                    calendarEvents[selectedDate].map((ev, idx) => (
-                      <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-emerald-400">📌</span>
-                          <span>{ev}</span>
+                    selectedDateEvents.map(ev => (
+                      <div key={ev.id} onClick={() => toggleEventDone(ev.id)} className={`bg-slate-950 border border-slate-800 p-3.5 rounded-2xl text-xs cursor-pointer transition-all flex items-center justify-between ${ev.done ? 'opacity-50 line-through' : ''}`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-4 h-4 rounded-md border flex items-center justify-center ${ev.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600'}`}>
+                            {ev.done && <span className="font-bold text-[10px]">✓</span>}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-100 block">{ev.title}</span>
+                            {ev.time && <span className="text-[10px] text-slate-400">⏰ {ev.time}</span>}
+                          </div>
                         </div>
-                        <button onClick={() => setDeleteTarget({ type: 'event', id: selectedDate, extra: idx })} className="text-red-400 hover:text-red-300 text-xs">🗑️</button>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${ev.assignedTo === 'נועה' ? 'bg-purple-500/10 border-purple-500/30 text-purple-300' : ev.assignedTo === 'רונאל' ? 'bg-blue-500/10 border-blue-500/30 text-blue-300' : 'bg-amber-500/10 border-amber-500/30 text-amber-300'}`}>
+                            👤 {ev.assignedTo}
+                          </span>
+                          <button onClick={(e) => openEditEventModal(ev, e)} className="text-slate-400 hover:text-emerald-400 p-1 text-xs">✏️</button>
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'event', id: ev.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -730,6 +812,44 @@
                     ביטול
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ADD / EDIT CALENDAR EVENT MODAL */}
+          {showEventModal && (
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                  <h3 className="font-bold text-base text-white">{editingEvent ? 'עריכת אירוע ביומן' : 'הוספת אירוע ליומן'}</h3>
+                  <button onClick={() => setShowEventModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                </div>
+
+                <form onSubmit={saveEvent} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">כותרת האירוע/המשימה</label>
+                    <input type="text" required placeholder="למשל: פגישת זום, תור לרופא..." value={newEventTitle} onChange={e => setNewEventTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">משויך ל-</label>
+                      <select value={newEventAssignee} onChange={e => setNewEventAssignee(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold outline-none">
+                        <option value="נועה">נועה</option>
+                        <option value="רונאל">רונאל</option>
+                        <option value="שניהם">שניהם</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">שעה</label>
+                      <input type="time" value={newEventTime} onChange={e => setNewEventTime(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none text-center" />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
+                    {editingEvent ? 'עדכן אירוע ב-DB' : 'שמור אירוע ב-DB'}
+                  </button>
+                </form>
               </div>
             </div>
           )}
