@@ -70,7 +70,6 @@
     const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
 
     function App() {
-      // אם אין משתמש שמור במכשיר, נציג null כדי שיעלה מסך בחירה
       const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('focus_flow_user') || null);
       
       const [activeTab, setActiveTab] = useState('habits');
@@ -189,7 +188,6 @@
         fetchData();
       }, []);
 
-      // אם המשתמש עדיין לא בחר פרופיל במכשיר הזה, נציג מסך בחירה ראשוני
       if (!currentUser) {
         return (
           <div className="max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
@@ -637,11 +635,18 @@
         return h.days.includes(currentDayOfWeek);
       });
 
-      const totalCompletedToday = todaysHabits.filter(h => h.logs && h.logs[todayKey]).length;
-      const progressPercent = todaysHabits.length > 0 ? Math.round((totalCompletedToday / todaysHabits.length) * 100) : 0;
+      // מיון ההרגלים מהזמן המוקדם למאוחר באותו היום
+      const sortedTodaysHabits = [...todaysHabits].sort((a, b) => {
+        const timeA = a.startTime || '00:00';
+        const timeB = b.startTime || '00:00';
+        return timeA.localeCompare(timeB);
+      });
+
+      const totalCompletedToday = sortedTodaysHabits.filter(h => h.logs && h.logs[todayKey]).length;
+      const progressPercent = sortedTodaysHabits.length > 0 ? Math.round((totalCompletedToday / sortedTodaysHabits.length) * 100) : 0;
       const maxStreakOverall = userHabits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
 
-      const filteredHabits = todaysHabits.filter(h => {
+      const filteredHabits = sortedTodaysHabits.filter(h => {
         const isDone = !!(h.logs && h.logs[todayKey]);
         if (filter === 'pending') return !isDone;
         if (filter === 'completed') return isDone;
@@ -652,8 +657,15 @@
       const quickHabitsToDisplay = favoriteHabitsList.length > 0 ? favoriteHabitsList : DEFAULT_QUICK_TEMPLATES;
 
       const userChores = chores.filter(c => c.assignedTo === currentUser || c.assignedTo === 'שניהם');
-      const todayCalendarEvents = calendarEvents.filter(ev => (ev.date === todayKey) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'));
-      const selectedDateEvents = calendarEvents.filter(ev => (ev.date === selectedDate) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'));
+      
+      // אירועי היומן להיום ממוינים מהמוקדם למאוחר
+      const todayCalendarEvents = calendarEvents
+        .filter(ev => (ev.date === todayKey) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'))
+        .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
+
+      const selectedDateEvents = calendarEvents
+        .filter(ev => (ev.date === selectedDate) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'))
+        .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
 
       const unboughtItems = shoppingItems.filter(i => !i.bought);
       const boughtItems = shoppingItems.filter(i => i.bought);
@@ -739,19 +751,11 @@
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-medium">
-                  <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg ${filter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הכל</button>
-                  <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
-                  <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
-                </div>
-                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל ל{currentUser}</button>
-              </div>
-
+              {/* TODO / משימות מתוזמנות להיום */}
               {todayCalendarEvents.length > 0 && (
-                <div className="space-y-2 bg-slate-900/60 p-3 rounded-2xl border border-amber-500/30">
+                <div className="space-y-2 bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40 shadow-md">
                   <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                    <span>📅</span> משימות מתוזמנות מהיומן להיום:
+                    <span>📋</span> TODO / משימות מתוזמנות להיום:
                   </h4>
                   <div className="space-y-1.5">
                     {todayCalendarEvents.map(ev => (
@@ -759,7 +763,7 @@
                         key={ev.id} 
                         onClick={() => toggleEventDone(ev.id)}
                         className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                          ev.done ? 'bg-emerald-950/20 border-emerald-500/30 opacity-60 line-through' : 'bg-slate-950 border-slate-800'
+                          ev.done ? 'bg-emerald-950/20 border-emerald-500/30 opacity-60 line-through' : 'bg-slate-950 border-slate-800 hover:border-amber-500/50'
                         }`}
                       >
                         <div className="flex items-center gap-2">
@@ -769,7 +773,7 @@
                           <span className="font-semibold text-slate-200">{ev.title}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px]">
-                          {ev.time && <span className="text-slate-400">⏰ {ev.time}</span>}
+                          {ev.time && <span className="text-slate-400 font-bold">⏰ {ev.time}</span>}
                           <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md font-bold">
                             👤 {ev.assignedTo}
                           </span>
@@ -779,6 +783,15 @@
                   </div>
                 </div>
               )}
+
+              <div className="flex items-center justify-between pt-1">
+                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-medium">
+                  <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg ${filter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הכל</button>
+                  <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
+                  <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
+                </div>
+                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל ל{currentUser}</button>
+              </div>
 
               <div className="space-y-3">
                 {filteredHabits.length === 0 ? (
@@ -810,7 +823,7 @@
                             
                             <div className="flex items-center gap-1.5">
                               {habit.startTime && (
-                                <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                                <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800 font-bold">
                                   ⏰ {habit.startTime}
                                 </span>
                               )}
@@ -1077,11 +1090,11 @@
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">סה"כ הרגלים מתוכננים להיום:</span>
-                    <span className="font-bold text-white">{todaysHabits.length}</span>
+                    <span className="font-bold text-white">{sortedTodaysHabits.length}</span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">הרגלים שבוצעו היום:</span>
-                    <span className="font-bold text-emerald-400">{totalCompletedToday} מתוך {todaysHabits.length}</span>
+                    <span className="font-bold text-emerald-400">{totalCompletedToday} מתוך {sortedTodaysHabits.length}</span>
                   </div>
                   <div className="flex justify-between py-1.5">
                     <span className="text-slate-400">משימות בית פתוחות:</span>
@@ -1263,7 +1276,7 @@
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py.5 rounded-xl text-xs shadow-lg mt-2">
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
                     {editingChore ? 'עדכן משימה ב-DB' : 'שמור משימה ב-DB'}
                   </button>
                 </form>
