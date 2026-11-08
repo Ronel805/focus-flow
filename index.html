@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FocusHabits</title>
   
-  <!-- תמיכה באפליקציה בנייד (PWA) -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="FocusHabits" />
@@ -32,7 +31,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect } = React;
 
     const SUPABASE_URL = "https://wwicfhomrexzczlhqlgx.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_5fELLN6m3tMcIZxRmLNIYQ_OwX13l4i";
@@ -124,7 +123,7 @@
           const permission = await Notification.requestPermission();
           setNotificationPermission(permission);
           if (permission === 'granted') {
-            new Notification("FocusHabits", { body: "התראות הופעל בהצלחה! מעכשיו תקבל תזכורות בזמן אמת." });
+            new Notification("FocusHabits", { body: "התראות הופעלו בהצלחה!" });
           }
         }
       };
@@ -219,7 +218,6 @@
             targetTime.setHours(hours, minutes, 0, 0);
 
             const diffMs = targetTime.getTime() - now.getTime();
-            // אם השעה טרם הגיעה היום
             if (diffMs > 0) {
               const timerId = setTimeout(() => {
                 const isDone = h.logs && h.logs[currentDStr];
@@ -700,7 +698,6 @@
 
       const totalCompletedView = sortedViewHabits.filter(h => h.logs && h.logs[viewDate]).length;
       const progressPercent = sortedViewHabits.length > 0 ? Math.round((totalCompletedView / sortedViewHabits.length) * 100) : 0;
-      const maxStreakOverall = userHabits.reduce((max, h) => Math.max(max, h.streak || 0), 0);
 
       const calculateStatsForDays = (numDays) => {
         let totalPossible = 0;
@@ -1042,7 +1039,6 @@
                 </button>
               </form>
 
-              {/* UNBOUGHT ITEMS */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
                   <span>🛍️ מוצרים לקנייה ({unboughtItems.length})</span>
@@ -1069,7 +1065,6 @@
                 )}
               </div>
 
-              {/* BOUGHT ITEMS */}
               {boughtItems.length > 0 && (
                 <div className="space-y-2 pt-2 border-t border-slate-800/80">
                   <div className="flex items-center justify-between">
@@ -1112,7 +1107,7 @@
                     const dayNum = i + 1;
                     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                     const isSelected = selectedDate === dateStr;
-                    const isToday = todayKey === dateStr;
+                    const isToday = todayDateStr === dateStr;
                     const hasEvents = calendarEvents.some(ev => ev.date === dateStr && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'));
 
                     return (
