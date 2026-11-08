@@ -50,15 +50,17 @@
       { id: 6, label: "ש'" }
     ];
 
+    const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
+
     function App() {
       const [activeTab, setActiveTab] = useState('habits');
       const [currentUser, setCurrentUser] = useState('נועה');
       
       const [habits, setHabits] = useState([]);
       const [filter, setFilter] = useState('all');
-      const [showAddHabitModal, setShowAddHabitModal] = useState(false);
+      const [showHabitModal, setShowHabitModal] = useState(false);
+      const [editingHabit, setEditingHabit] = useState(null);
       
-      // New Habit Form State
       const todayDateStr = new Date().toISOString().split('T')[0];
       const [newTitle, setNewTitle] = useState('');
       const [newMicro, setNewMicro] = useState('');
@@ -66,13 +68,7 @@
       const [newStartDate, setNewStartDate] = useState(todayDateStr);
       const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
 
-      const [chores, setChores] = useState(() => {
-        const saved = localStorage.getItem('focus_flow_chores');
-        return saved ? JSON.parse(saved) : [
-          { id: '1', title: 'להוריד את הזבל', assignedTo: 'רונאל', done: false },
-          { id: '2', title: 'לקנות מצרכים לשבת', assignedTo: 'נועה', done: true }
-        ];
-      });
+      const [chores, setChores] = useState([]);
       const [newChoreTitle, setNewChoreTitle] = useState('');
       const [newChoreAssignee, setNewChoreAssignee] = useState('נועה');
 
@@ -80,119 +76,142 @@
       const [selectedDate, setSelectedDate] = useState(todayDateStr);
       const [calendarEvents, setCalendarEvents] = useState(() => {
         const saved = localStorage.getItem('focus_flow_calendar');
-        return saved ? JSON.parse(saved) : {
-          [todayDateStr]: ['אימון כושר', 'פגישה שבועית']
-        };
+        return saved ? JSON.parse(saved) : { [todayDateStr]: ['אימון כושר', 'פגישה שבועית'] };
       });
       const [newEventText, setNewEventText] = useState('');
 
       const todayKey = todayDateStr;
 
-      // Fetch Habits from Supabase
       useEffect(() => {
-        async function fetchHabits() {
+        async function fetchData() {
           if (supabase) {
             try {
-              const { data, error } = await supabase.from('habits').select('*');
-              if (!error && data && data.length > 0) {
-                const formatted = data.map(item => ({
+              const { data: habitsData } = await supabase.from('habits').select('*');
+              if (habitsData) {
+                setHabits(habitsData.map(item => ({
                   ...item,
                   microHabit: item.micro_habit,
                   startTime: item.start_time,
                   startDate: item.created_at,
                   days: item.days || [0, 1, 2, 3, 4, 5, 6],
                   logs: item.logs || {}
-                }));
-                setHabits(formatted);
-                return;
+                })));
               }
+
+              const { data: choresData } = await supabase.from('chores').select('*');
+              if (choresData) {
+                setChores(choresData.map(item => ({
+                  ...item,
+                  assignedTo: item.assigned_to
+                })));
+              }
+              return;
             } catch (err) {
-              console.error("Supabase fetch error:", err);
+              console.error("Supabase error:", err);
             }
           }
-          const saved = localStorage.getItem('focus_flow_habits');
-          setHabits(saved ? JSON.parse(saved) : []);
+          const savedHabits = localStorage.getItem('focus_flow_habits');
+          if (savedHabits) setHabits(JSON.parse(savedHabits));
         }
-        fetchHabits();
+        fetchData();
       }, []);
-
-      useEffect(() => {
-        localStorage.setItem('focus_flow_chores', JSON.stringify(chores));
-      }, [chores]);
 
       useEffect(() => {
         localStorage.setItem('focus_flow_calendar', JSON.stringify(calendarEvents));
       }, [calendarEvents]);
 
       const toggleHabit = async (id) => {
-        const updated = habits.map(h => {
-          if (h.id !== id) return h;
-          const isDone = !!(h.logs && h.logs[todayKey]);
-          const updatedLogs = { ...(h.logs || {}) };
-          if (isDone) {
-            delete updatedLogs[todayKey];
-          } else {
-            updatedLogs[todayKey] = true;
-            if (window.confetti) {
-              window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
-            }
-          }
-          return {
-            ...h,
-            logs: updatedLogs,
-            streak: !isDone ? h.streak + 1 : Math.max(0, h.streak - 1)
-          };
-        });
+        const target = habits.find(h => h.id === id);
+        if (!target) return;
 
-        setHabits(updated);
-        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+        const isDone = !!(target.logs && target.logs[todayKey]);
+        const updatedLogs = { ...(target.logs || {}) };
+
+        if (isDone) {
+          delete updatedLogs[todayKey];
+        } else {
+          updatedLogs[todayKey] = true;
+          if (window.confetti) {
+            window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
+          }
+        }
+
+        const newStreak = !isDone ? target.streak + 1 : Math.max(0, target.streak - 1);
+        const updatedHabits = habits.map(h => h.id === id ? { ...h, logs: updatedLogs, streak: newStreak } : h);
+
+        setHabits(updatedHabits);
+        localStorage.setItem('focus_flow_habits', JSON.stringify(updatedHabits));
 
         if (supabase) {
-          const target = updated.find(h => h.id === id);
-          await supabase.from('habits').upsert({
-            id: target.id,
-            title: target.title,
-            micro_habit: target.microHabit,
-            start_time: target.startTime,
-            created_at: target.startDate,
-            days: target.days,
-            streak: target.streak,
-            logs: target.logs
-          });
+          await supabase.from('habits').update({
+            streak: newStreak,
+            logs: updatedLogs
+          }).eq('id', id);
         }
       };
 
-      const toggleDaySelection = (dayId) => {
-        if (selectedDays.includes(dayId)) {
-          if (selectedDays.length > 1) {
-            setSelectedDays(selectedDays.filter(d => d !== dayId));
-          }
-        } else {
-          setSelectedDays([...selectedDays, dayId].sort());
-        }
+      const openAddHabitModal = () => {
+        setEditingHabit(null);
+        setNewTitle('');
+        setNewMicro('');
+        setNewStartTime('08:00');
+        setNewStartDate(todayDateStr);
+        setSelectedDays([0, 1, 2, 3, 4, 5, 6]);
+        setShowHabitModal(true);
       };
 
-      const addHabit = async (e) => {
+      const openEditHabitModal = (habit, e) => {
+        e.stopPropagation();
+        setEditingHabit(habit);
+        setNewTitle(habit.title);
+        setNewMicro(habit.microHabit || '');
+        setNewStartTime(habit.startTime || '08:00');
+        setNewStartDate(habit.startDate || todayDateStr);
+        setSelectedDays(habit.days || [0, 1, 2, 3, 4, 5, 6]);
+        setShowHabitModal(true);
+      };
+
+      const saveHabit = async (e) => {
         e.preventDefault();
         if (!newTitle.trim()) return;
-        
-        const habit = {
-          id: Date.now().toString(),
-          title: newTitle,
-          microHabit: newMicro,
-          startTime: newStartTime,
-          startDate: newStartDate,
-          days: selectedDays,
-          streak: 0,
-          logs: {}
-        };
-        
-        const updated = [...habits, habit];
-        setHabits(updated);
-        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
 
-        if (supabase) {
-          try {
+        if (editingHabit) {
+          const updated = habits.map(h => h.id === editingHabit.id ? {
+            ...h,
+            title: newTitle,
+            microHabit: newMicro,
+            startTime: newStartTime,
+            startDate: newStartDate,
+            days: selectedDays
+          } : h);
+          setHabits(updated);
+          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+
+          if (supabase) {
+            await supabase.from('habits').update({
+              title: newTitle,
+              micro_habit: newMicro,
+              start_time: newStartTime,
+              created_at: newStartDate,
+              days: selectedDays
+            }).eq('id', editingHabit.id);
+          }
+        } else {
+          const habit = {
+            id: Date.now().toString(),
+            title: newTitle,
+            microHabit: newMicro,
+            startTime: newStartTime,
+            startDate: newStartDate,
+            days: selectedDays,
+            streak: 0,
+            logs: {}
+          };
+          const updated = [...habits, habit];
+          setHabits(updated);
+          localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+
+          if (supabase) {
             await supabase.from('habits').insert([{
               id: habit.id,
               title: habit.title,
@@ -203,26 +222,81 @@
               streak: 0,
               logs: {}
             }]);
-          } catch (err) {
-            console.error("Error inserting to Supabase:", err);
           }
         }
-        
-        setNewTitle('');
-        setNewMicro('');
-        setNewStartTime('08:00');
-        setShowAddHabitModal(false);
+
+        setShowHabitModal(false);
       };
 
-      const toggleChore = (id) => {
-        setChores(chores.map(c => c.id === id ? { ...c, done: !c.done } : c));
+      const deleteHabit = async (id, e) => {
+        e.stopPropagation();
+        if (!confirm('האם למחוק הרגל זה לצמיתות מהבסיס נתונים?')) return;
+
+        const updated = habits.filter(h => h.id !== id);
+        setHabits(updated);
+        localStorage.setItem('focus_flow_habits', JSON.stringify(updated));
+
+        if (supabase) {
+          await supabase.from('habits').delete().eq('id', id);
+        }
       };
 
-      const addChore = (e) => {
+      const toggleChore = async (id) => {
+        const target = chores.find(c => c.id === id);
+        if (!target) return;
+
+        const newDone = !target.done;
+        setChores(chores.map(c => c.id === id ? { ...c, done: newDone } : c));
+
+        if (supabase) {
+          await supabase.from('chores').update({ done: newDone }).eq('id', id);
+        }
+      };
+
+      const addChore = async (e) => {
         e.preventDefault();
         if (!newChoreTitle.trim()) return;
-        setChores([...chores, { id: Date.now().toString(), title: newChoreTitle, assignedTo: newChoreAssignee, done: false }]);
+
+        const chore = {
+          id: Date.now().toString(),
+          title: newChoreTitle,
+          assignedTo: newChoreAssignee,
+          done: false
+        };
+
+        setChores([...chores, chore]);
         setNewChoreTitle('');
+
+        if (supabase) {
+          await supabase.from('chores').insert([{
+            id: chore.id,
+            title: chore.title,
+            assigned_to: chore.assignedTo,
+            done: false
+          }]);
+        }
+      };
+
+      const deleteChore = async (id, e) => {
+        e.stopPropagation();
+        setChores(chores.filter(c => c.id !== id));
+        if (supabase) {
+          await supabase.from('chores').delete().eq('id', id);
+        }
+      };
+
+      const toggleDaySelection = (dayId) => {
+        if (selectedDays.includes(dayId)) {
+          if (selectedDays.length > 1) setSelectedDays(selectedDays.filter(d => d !== dayId));
+        } else {
+          setSelectedDays([...selectedDays, dayId].sort());
+        }
+      };
+
+      const setQuickDate = (offsetDays) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offsetDays);
+        setNewStartDate(d.toISOString().split('T')[0]);
       };
 
       const addCalendarEvent = (e) => {
@@ -233,6 +307,12 @@
         setNewEventText('');
       };
 
+      const deleteCalendarEvent = (idx) => {
+        const currentEvents = calendarEvents[selectedDate] || [];
+        const updated = currentEvents.filter((_, i) => i !== idx);
+        setCalendarEvents({ ...calendarEvents, [selectedDate]: updated });
+      };
+
       const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
       const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
 
@@ -240,11 +320,17 @@
       const month = currentMonth.getMonth();
       const daysInMonth = getDaysInMonth(year, month);
       const firstDay = getFirstDayOfMonth(year, month);
-
       const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 
       const totalCompletedToday = habits.filter(h => h.logs && h.logs[todayKey]).length;
       const progressPercent = habits.length > 0 ? Math.round((totalCompletedToday / habits.length) * 100) : 0;
+
+      const filteredHabits = habits.filter(h => {
+        const isDone = !!(h.logs && h.logs[todayKey]);
+        if (filter === 'pending') return !isDone;
+        if (filter === 'completed') return isDone;
+        return true;
+      });
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
@@ -255,7 +341,7 @@
                   <span className="text-emerald-400">⚡</span> פוקוס-פלו
                 </h1>
                 <p className="text-xs text-emerald-400/90 font-medium mt-0.5 flex items-center gap-1">
-                  <span>☁️</span> מחובר לסופרבייס בענן
+                  <span>☁️</span> סנכרון DB בזמן אמת
                 </p>
               </div>
 
@@ -303,6 +389,7 @@
             </button>
           </nav>
 
+          {/* TAB 1: HABITS */}
           {activeTab === 'habits' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -311,22 +398,23 @@
                   <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
                   <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
                 </div>
-                <button onClick={() => setShowAddHabitModal(true)} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל</button>
+                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל</button>
               </div>
 
               <div className="space-y-3">
-                {habits.length === 0 ? (
+                {filteredHabits.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    אין הרגלים קיימים. לחצי על "+ הרגל" כדי ליצור הרגל ראשון!
+                    אין הרגלים בקטגוריה זו. לחצי על "+ הרגל" כדי ליצור!
                   </div>
                 ) : (
-                  habits.map(habit => {
+                  filteredHabits.map(habit => {
                     const isDone = !!(habit.logs && habit.logs[todayKey]);
                     return (
                       <div key={habit.id} onClick={() => toggleHabit(habit.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
                         <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>
                           {isDone && <span className="font-black text-xs">✓</span>}
                         </div>
+
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2">
                             <h3 className={`font-bold text-sm truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>{habit.title}</h3>
@@ -339,7 +427,23 @@
                               <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">🔥 {habit.streak}</span>
                             </div>
                           </div>
+
                           {habit.microHabit && <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20"><span>💡</span> {habit.microHabit}</p>}
+
+                          <div className="flex items-center justify-end gap-2 pt-2 mt-1 border-t border-slate-800/60">
+                            <button 
+                              onClick={(e) => openEditHabitModal(habit, e)}
+                              className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
+                            >
+                              ✏️ ערוך
+                            </button>
+                            <button 
+                              onClick={(e) => deleteHabit(habit.id, e)}
+                              className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
+                            >
+                              🗑️ מחק
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -349,6 +453,7 @@
             </div>
           )}
 
+          {/* TAB 2: CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
               <form onSubmit={addChore} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3">
@@ -370,13 +475,17 @@
                       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>{chore.done && <span className="font-bold text-xs">✓</span>}</div>
                       <span className={`text-sm font-medium ${chore.done ? 'line-through text-slate-500' : 'text-slate-100'}`}>{chore.title}</span>
                     </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${chore.assignedTo === 'נועה' ? 'bg-purple-500/10 border-purple-500/30 text-purple-300' : 'bg-blue-500/10 border-blue-500/30 text-blue-300'}`}>👤 {chore.assignedTo}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${chore.assignedTo === 'נועה' ? 'bg-purple-500/10 border-purple-500/30 text-purple-300' : 'bg-blue-500/10 border-blue-500/30 text-blue-300'}`}>👤 {chore.assignedTo}</span>
+                      <button onClick={(e) => deleteChore(chore.id, e)} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+          {/* TAB 3: CALENDAR */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4">
@@ -433,9 +542,12 @@
                     <p className="text-xs text-slate-500 text-center py-3">אין משימות מתוזמנות לתאריך זה.</p>
                   ) : (
                     calendarEvents[selectedDate].map((ev, idx) => (
-                      <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-semibold text-slate-200 flex items-center gap-2">
-                        <span className="text-emerald-400">📌</span>
-                        <span>{ev}</span>
+                      <div key={idx} className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-semibold text-slate-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400">📌</span>
+                          <span>{ev}</span>
+                        </div>
+                        <button onClick={() => deleteCalendarEvent(idx)} className="text-red-400 hover:text-red-300 text-xs">🗑️</button>
                       </div>
                     ))
                   )}
@@ -463,16 +575,18 @@
             </div>
           )}
 
-          {/* ADD HABIT MODAL */}
-          {showAddHabitModal && (
+          {/* ADD / EDIT HABIT MODAL WITH ENHANCED TIME & DATE PICKER */}
+          {showHabitModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                  <h3 className="font-bold text-base text-white">הוספת הרגל חדש</h3>
-                  <button onClick={() => setShowAddHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                  <h3 className="font-bold text-base text-white">
+                    {editingHabit ? 'עריכת הרגל' : 'הוספת הרגל חדש'}
+                  </h3>
+                  <button onClick={() => setShowHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
                 </div>
 
-                <form onSubmit={addHabit} className="space-y-3">
+                <form onSubmit={saveHabit} className="space-y-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">שם ההרגל</label>
                     <input type="text" required placeholder="למשל: אימון כושר" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
@@ -483,14 +597,59 @@
                     <input type="text" placeholder="למשל: לנעול נעלי ספורט" value={newMicro} onChange={e => setNewMicro(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">שעת התחלה</label>
-                      <input type="time" value={newStartTime} onChange={e => setNewStartTime(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none" />
+                  {/* QUICK & EASY TIME PICKER */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">שעת התחלה</label>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <input 
+                        type="time" 
+                        value={newStartTime} 
+                        onChange={e => setNewStartTime(e.target.value)} 
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none flex-1 text-center" 
+                      />
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך התחלה</label>
-                      <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-emerald-400 font-bold outline-none" />
+                    <div className="flex justify-between gap-1">
+                      {QUICK_TIMES.map(t => (
+                        <button
+                          type="button"
+                          key={t}
+                          onClick={() => setNewStartTime(t)}
+                          className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                            newStartTime === t ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* QUICK & EASY DATE PICKER */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך התחלה</label>
+                    <input 
+                      type="date" 
+                      value={newStartDate} 
+                      onChange={e => setNewStartDate(e.target.value)} 
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none mb-1.5 text-center" 
+                    />
+                    <div className="flex gap-1.5">
+                      <button 
+                        type="button" 
+                        onClick={() => setQuickDate(0)} 
+                        className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${
+                          newStartDate === todayDateStr ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        היום
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={() => setQuickDate(1)} 
+                        className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                      >
+                        מחר
+                      </button>
                     </div>
                   </div>
 
@@ -516,7 +675,7 @@
                   </div>
 
                   <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
-                    שמור הרגל ב-Supabase
+                    {editingHabit ? 'עדכן הרגל ב-Supabase' : 'שמור הרגל ב-Supabase'}
                   </button>
                 </form>
               </div>
