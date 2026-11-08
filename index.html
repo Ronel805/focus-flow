@@ -41,20 +41,12 @@
       ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
       : null;
 
-    const playSuccessSound = () => {
+    // צליל כפיים אמיתי בשילוב קונפטי חגיגי
+    const playApplauseSound = () => {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.3);
+        const audio = new Audio('https://www.myinstants.com/media/sounds/applause.mp3');
+        audio.volume = 0.5;
+        audio.play().catch(e => console.log("Audio play blocked:", e));
       } catch (e) {}
     };
 
@@ -78,9 +70,10 @@
     const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
 
     function App() {
-      const [activeTab, setActiveTab] = useState('habits');
-      const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('focus_flow_user') || 'נועה');
+      // אם אין משתמש שמור במכשיר, נציג null כדי שיעלה מסך בחירה
+      const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('focus_flow_user') || null);
       
+      const [activeTab, setActiveTab] = useState('habits');
       const [habits, setHabits] = useState([]);
       const [filter, setFilter] = useState('all');
       const [showHabitModal, setShowHabitModal] = useState(false);
@@ -94,7 +87,7 @@
       const [newMicro, setNewMicro] = useState('');
       const [newStartTime, setNewStartTime] = useState('08:00');
       const [newStartDate, setNewStartDate] = useState(todayDateStr);
-      const [newHabitUser, setNewHabitUser] = useState(currentUser);
+      const [newHabitUser, setNewHabitUser] = useState(currentUser || 'נועה');
       const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
       const [newIsFavorite, setNewIsFavorite] = useState(false);
 
@@ -103,7 +96,7 @@
       const [showChoreModal, setShowChoreModal] = useState(false);
       const [editingChore, setEditingChore] = useState(null);
       const [newChoreTitle, setNewChoreTitle] = useState('');
-      const [newChoreAssignee, setNewChoreAssignee] = useState(currentUser);
+      const [newChoreAssignee, setNewChoreAssignee] = useState(currentUser || 'נועה');
       const [newChoreDueDate, setNewChoreDueDate] = useState(todayDateStr);
 
       // Shopping List State
@@ -126,9 +119,17 @@
 
       const todayKey = todayDateStr;
 
-      useEffect(() => {
-        localStorage.setItem('focus_flow_user', currentUser);
-      }, [currentUser]);
+      const handleSelectUser = (userName) => {
+        setCurrentUser(userName);
+        setNewHabitUser(userName);
+        setNewChoreAssignee(userName);
+        localStorage.setItem('focus_flow_user', userName);
+      };
+
+      const handleSwitchUser = () => {
+        localStorage.removeItem('focus_flow_user');
+        setCurrentUser(null);
+      };
 
       // טעינת נתונים מ-Supabase
       useEffect(() => {
@@ -188,6 +189,39 @@
         fetchData();
       }, []);
 
+      // אם המשתמש עדיין לא בחר פרופיל במכשיר הזה, נציג מסך בחירה ראשוני
+      if (!currentUser) {
+        return (
+          <div className="max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full text-center space-y-6 shadow-2xl">
+              <div className="space-y-2">
+                <span className="text-4xl">⚡</span>
+                <h1 className="text-2xl font-black text-white">FocusHabits</h1>
+                <p className="text-xs text-slate-400">מי משתמש במכשיר הזה כעת?</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  onClick={() => handleSelectUser('נועה')}
+                  className="bg-slate-950 hover:bg-slate-800 border-2 border-purple-500/40 hover:border-purple-500 p-5 rounded-2xl flex flex-col items-center gap-2 transition-all shadow-lg group"
+                >
+                  <span className="text-3xl group-hover:scale-110 transition-transform">👩🏻‍🦰</span>
+                  <span className="font-bold text-sm text-purple-300">נועה</span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectUser('רונאל')}
+                  className="bg-slate-950 hover:bg-slate-800 border-2 border-blue-500/40 hover:border-blue-500 p-5 rounded-2xl flex flex-col items-center gap-2 transition-all shadow-lg group"
+                >
+                  <span className="text-3xl group-hover:scale-110 transition-transform">👦🏻</span>
+                  <span className="font-bold text-sm text-blue-300">רונאל</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       // --- HABITS ACTIONS ---
       const toggleHabit = async (id) => {
         const target = habits.find(h => h.id === id);
@@ -200,9 +234,9 @@
           delete updatedLogs[todayKey];
         } else {
           updatedLogs[todayKey] = true;
-          playSuccessSound();
+          playApplauseSound();
           if (window.confetti) {
-            window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
+            window.confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
           }
         }
 
@@ -355,7 +389,7 @@
         if (!target) return;
 
         const newDone = !target.done;
-        if (newDone) playSuccessSound();
+        if (newDone) playApplauseSound();
 
         setChores(chores.map(c => c.id === id ? { ...c, done: newDone } : c));
 
@@ -456,7 +490,7 @@
         if (!target) return;
 
         const newBought = !target.bought;
-        if (newBought) playSuccessSound();
+        if (newBought) playApplauseSound();
 
         setShoppingItems(shoppingItems.map(i => i.id === id ? { ...i, bought: newBought } : i));
 
@@ -544,7 +578,7 @@
         if (!target) return;
 
         const newDone = !target.done;
-        if (newDone) playSuccessSound();
+        if (newDone) playApplauseSound();
 
         setCalendarEvents(calendarEvents.map(ev => ev.id === id ? { ...ev, done: newDone } : ev));
 
@@ -637,16 +671,19 @@
                 </p>
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-2xl flex items-center gap-2 shadow-inner">
-                <span className="text-xs text-slate-400">משתמש:</span>
-                <select 
-                  value={currentUser} 
-                  onChange={(e) => setCurrentUser(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-emerald-400 outline-none cursor-pointer"
+              <div className="flex items-center gap-2">
+                <div className="bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-2xl flex items-center gap-1.5 shadow-inner">
+                  <span className="text-xs font-bold text-emerald-400">
+                    {currentUser === 'נועה' ? 'נועה 👩🏻‍🦰' : 'רונאל 👦🏻'}
+                  </span>
+                </div>
+                <button 
+                  onClick={handleSwitchUser}
+                  title="החלף משתמש"
+                  className="bg-slate-950 hover:bg-slate-800 border border-slate-800 p-2 rounded-2xl text-xs text-slate-400 hover:text-white transition-all"
                 >
-                  <option value="נועה" className="bg-slate-900 text-white">נועה 👩🏻‍🦰</option>
-                  <option value="רונאל" className="bg-slate-900 text-white">רונאל 👦🏻</option>
-                </select>
+                  🔄
+                </button>
               </div>
             </div>
 
@@ -1226,7 +1263,7 @@
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py.5 rounded-xl text-xs shadow-lg mt-2">
                     {editingChore ? 'עדכן משימה ב-DB' : 'שמור משימה ב-DB'}
                   </button>
                 </form>
