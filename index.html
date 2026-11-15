@@ -65,6 +65,7 @@
     ];
 
     const SHOPPING_CATEGORIES = ["כללי", "ירקות ופירות 🥑", "מוצרי חלב 🧀", "מאפים וסופר 🍞", "בשר ודגים 🥩", "מוצרי ניקיון 🧼"];
+    const NON_FOOD_CATEGORIES = ["כללי 🏠", "ריהוט 🛋️", "עיצוב ואקססוריז ✨", "חשמל ותאורה 💡", "תחזוקה ותיקונים 🧰"];
     const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
 
     function App() {
@@ -100,10 +101,16 @@
       const [newChoreAssignee, setNewChoreAssignee] = useState(currentUser || 'נועה');
       const [newChoreDueDate, setNewChoreDueDate] = useState(todayDateStr);
 
-      // Shopping List State
+      // Shopping List State (Food & Super)
       const [shoppingItems, setShoppingItems] = useState([]);
       const [newItemTitle, setNewItemTitle] = useState('');
       const [newItemCategory, setNewItemCategory] = useState('כללי');
+
+      // Non-Food / Furniture State
+      const [nonFoodItems, setNonFoodItems] = useState([]);
+      const [newNonFoodTitle, setNewNonFoodTitle] = useState('');
+      const [newNonFoodCategory, setNewNonFoodCategory] = useState('כללי 🏠');
+      const [shoppingSubTab, setShoppingSubTab] = useState('super'); // 'super' או 'furniture'
 
       // Calendar Events State
       const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -177,6 +184,17 @@
                   category: item.category || 'כללי',
                   addedBy: item.added_by || 'שניהם',
                   bought: item.bought || false
+                })));
+              }
+
+              const { data: nonFoodData } = await supabase.from('non_food_list').select('*').order('created_at', { ascending: false });
+              if (nonFoodData) {
+                setNonFoodItems(nonFoodData.map(item => ({
+                  id: item.id,
+                  title: item.title,
+                  category: item.category || 'כללי 🏠',
+                  addedBy: item.added_by || 'שניהם',
+                  acquired: item.acquired || false
                 })));
               }
 
@@ -506,7 +524,7 @@
         setShowChoreModal(false);
       };
 
-      // --- SHOPPING LIST ACTIONS ---
+      // --- SHOPPING LIST ACTIONS (FOOD) ---
       const addShoppingItem = async (e) => {
         e.preventDefault();
         if (!newItemTitle.trim()) return;
@@ -553,6 +571,56 @@
 
         if (supabase) {
           await supabase.from('shopping_list').delete().eq('bought', true);
+        }
+      };
+
+      // --- NON-FOOD / FURNITURE ACTIONS ---
+      const addNonFoodItem = async (e) => {
+        e.preventDefault();
+        if (!newNonFoodTitle.trim()) return;
+
+        const item = {
+          id: Date.now().toString(),
+          title: newNonFoodTitle,
+          category: newNonFoodCategory,
+          addedBy: currentUser,
+          acquired: false
+        };
+
+        setNonFoodItems([item, ...nonFoodItems]);
+        setNewNonFoodTitle('');
+
+        if (supabase) {
+          await supabase.from('non_food_list').insert([{
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            added_by: item.addedBy,
+            acquired: false
+          }]);
+        }
+      };
+
+      const toggleNonFoodAcquired = async (id) => {
+        const target = nonFoodItems.find(i => i.id === id);
+        if (!target) return;
+
+        const newAcquired = !target.acquired;
+        if (newAcquired) playApplauseSound();
+
+        setNonFoodItems(nonFoodItems.map(i => i.id === id ? { ...i, acquired: newAcquired } : i));
+
+        if (supabase) {
+          await supabase.from('non_food_list').update({ acquired: newAcquired }).eq('id', id);
+        }
+      };
+
+      const clearAcquiredItems = async () => {
+        const remaining = nonFoodItems.filter(i => !i.acquired);
+        setNonFoodItems(remaining);
+
+        if (supabase) {
+          await supabase.from('non_food_list').delete().eq('acquired', true);
         }
       };
 
@@ -648,6 +716,9 @@
         } else if (deleteTarget.type === 'shopping') {
           setShoppingItems(shoppingItems.filter(i => i.id !== deleteTarget.id));
           if (supabase) await supabase.from('shopping_list').delete().eq('id', deleteTarget.id);
+        } else if (deleteTarget.type === 'nonFood') {
+          setNonFoodItems(nonFoodItems.filter(i => i.id !== deleteTarget.id));
+          if (supabase) await supabase.from('non_food_list').delete().eq('id', deleteTarget.id);
         } else if (deleteTarget.type === 'event') {
           setCalendarEvents(calendarEvents.filter(ev => ev.id !== deleteTarget.id));
           if (supabase) await supabase.from('calendar_events').delete().eq('id', deleteTarget.id);
@@ -748,6 +819,9 @@
 
       const unboughtItems = shoppingItems.filter(i => !i.bought);
       const boughtItems = shoppingItems.filter(i => i.bought);
+
+      const unacquiredNonFood = nonFoodItems.filter(i => !i.acquired);
+      const acquiredNonFood = nonFoodItems.filter(i => i.acquired);
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
@@ -1012,76 +1086,166 @@
             </div>
           )}
 
-          {/* TAB 3: SHOPPING LIST */}
+          {/* TAB 3: SHOPPING & HOME PRODUCTS */}
           {activeTab === 'shopping' && (
             <div className="space-y-4">
-              <form onSubmit={addShoppingItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-                <h3 className="text-xs font-bold text-slate-200">🛒 הוספת מוצר לרשימת הקניות</h3>
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="למשל: חלב, לחם דגנים, עגבניות..." 
-                    value={newItemTitle} 
-                    onChange={e => setNewItemTitle(e.target.value)} 
-                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" 
-                  />
-                  <select 
-                    value={newItemCategory} 
-                    onChange={e => setNewItemCategory(e.target.value)} 
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
-                  >
-                    {SHOPPING_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </div>
-                <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-md">
-                  + הוסף מוצר לרשימה
+              {/* תתי-טאבים לבחירה בין סופר לרהיטים/מוצרים */}
+              <div className="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
+                <button 
+                  onClick={() => setShoppingSubTab('super')} 
+                  className={`py-2 rounded-xl transition-all ${shoppingSubTab === 'super' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}
+                >
+                  🛒 סופר ומזון
                 </button>
-              </form>
-
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                  <span>🛍️ מוצרים לקנייה ({unboughtItems.length})</span>
-                </h4>
-
-                {unboughtItems.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    רשימת הקניות ריקה!
-                  </div>
-                ) : (
-                  unboughtItems.map(item => (
-                    <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between cursor-pointer hover:border-emerald-500/40 transition-all">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-5 h-5 rounded-md border-2 border-slate-600 bg-slate-950" />
-                        <span className="text-xs font-semibold text-slate-100">{item.title}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">{item.category}</span>
-                        <span className="text-[10px] text-amber-400">👤 {item.addedBy}</span>
-                        <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
-                      </div>
-                    </div>
-                  ))
-                )}
+                <button 
+                  onClick={() => setShoppingSubTab('furniture')} 
+                  className={`py-2 rounded-xl transition-all ${shoppingSubTab === 'furniture' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}
+                >
+                  🛋️ רהיטים ומוצרים לבית
+                </button>
               </div>
 
-              {boughtItems.length > 0 && (
-                <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-400">✓ נאספו לסל ({boughtItems.length})</h4>
-                    <button onClick={clearBoughtItems} className="text-[10px] text-red-400 hover:text-red-300 bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg">
-                      ניקוי מוצרים שנאספו 🗑️
-                    </button>
-                  </div>
-                  {boughtItems.map(item => (
-                    <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-950/40 border border-slate-900 p-3 rounded-2xl flex items-center justify-between cursor-pointer opacity-50 line-through">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-5 h-5 rounded-md bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-xs">✓</div>
-                        <span className="text-xs font-semibold text-slate-400">{item.title}</span>
-                      </div>
-                      <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+              {/* תוכן סופר ומזון */}
+              {shoppingSubTab === 'super' && (
+                <div className="space-y-4">
+                  <form onSubmit={addShoppingItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                    <h3 className="text-xs font-bold text-slate-200">🛒 הוספת מוצר לרשימת הסופר</h3>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="למשל: חלב, לחם דגנים, עגבניות..." 
+                        value={newItemTitle} 
+                        onChange={e => setNewItemTitle(e.target.value)} 
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" 
+                      />
+                      <select 
+                        value={newItemCategory} 
+                        onChange={e => setNewItemCategory(e.target.value)} 
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
+                      >
+                        {SHOPPING_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
                     </div>
-                  ))}
+                    <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-md">
+                      + הוסף מוצר לסופר
+                    </button>
+                  </form>
+
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-300">🛍️ מוצרים לקנייה ({unboughtItems.length})</h4>
+                    {unboughtItems.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                        רשימת הסופר ריקה!
+                      </div>
+                    ) : (
+                      unboughtItems.map(item => (
+                        <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between cursor-pointer hover:border-emerald-500/40 transition-all">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 rounded-md border-2 border-slate-600 bg-slate-950" />
+                            <span className="text-xs font-semibold text-slate-100">{item.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">{item.category}</span>
+                            <span className="text-[10px] text-amber-400">👤 {item.addedBy}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {boughtItems.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-400">✓ נאספו לסל ({boughtItems.length})</h4>
+                        <button onClick={clearBoughtItems} className="text-[10px] text-red-400 hover:text-red-300 bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg">
+                          ניקוי מוצרים שנאספו 🗑️
+                        </button>
+                      </div>
+                      {boughtItems.map(item => (
+                        <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-950/40 border border-slate-900 p-3 rounded-2xl flex items-center justify-between cursor-pointer opacity-50 line-through">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 rounded-md bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-xs">✓</div>
+                            <span className="text-xs font-semibold text-slate-400">{item.title}</span>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* תוכן רהיטים ומוצרים לבית (לא אוכל) */}
+              {shoppingSubTab === 'furniture' && (
+                <div className="space-y-4">
+                  <form onSubmit={addNonFoodItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
+                    <h3 className="text-xs font-bold text-slate-200">🛋️ הוספת רהיט או מוצר לבית</h3>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        required 
+                        placeholder="למשל: ספה לסלון, שולחן כתיבה, מנורה..." 
+                        value={newNonFoodTitle} 
+                        onChange={e => setNewNonFoodTitle(e.target.value)} 
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" 
+                      />
+                      <select 
+                        value={newNonFoodCategory} 
+                        onChange={e => setNewNonFoodCategory(e.target.value)} 
+                        className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
+                      >
+                        {NON_FOOD_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                    </div>
+                    <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-md">
+                      + הוסף לרשימת רהיטים ומוצרים
+                    </button>
+                  </form>
+
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-300">📋 מוצרים ורהיטים שצריך לקנות ({unacquiredNonFood.length})</h4>
+                    {unacquiredNonFood.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                        רשימת הרהיטים והמוצרים ריקה!
+                      </div>
+                    ) : (
+                      unacquiredNonFood.map(item => (
+                        <div key={item.id} onClick={() => toggleNonFoodAcquired(item.id)} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between cursor-pointer hover:border-emerald-500/40 transition-all">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 rounded-md border-2 border-slate-600 bg-slate-950" />
+                            <span className="text-xs font-semibold text-slate-100">{item.title}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">{item.category}</span>
+                            <span className="text-[10px] text-amber-400">👤 {item.addedBy}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'nonFood', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {acquiredNonFood.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-slate-400">✓ נרכשו / הגיעו לבית ({acquiredNonFood.length})</h4>
+                        <button onClick={clearAcquiredItems} className="text-[10px] text-red-400 hover:text-red-300 bg-slate-900 border border-slate-800 px-2 py-1 rounded-lg">
+                          ניקוי פריטים שנרכשו 🗑️
+                        </button>
+                      </div>
+                      {acquiredNonFood.map(item => (
+                        <div key={item.id} onClick={() => toggleNonFoodAcquired(item.id)} className="bg-slate-950/40 border border-slate-900 p-3 rounded-2xl flex items-center justify-between cursor-pointer opacity-50 line-through">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-5 h-5 rounded-md bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-xs">✓</div>
+                            <span className="text-xs font-semibold text-slate-400">{item.title}</span>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'nonFood', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1230,7 +1394,7 @@
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl">
                 <div className="text-3xl">⚠️</div>
                 <h3 className="font-bold text-base text-white">אישור מחיקה</h3>
-                <p className="text-xs text-slate-300">האם אתה בטוח שברצונך למחוק פריט זה? הפעולה תמחק את המידע גם מהבסיס נתונים.</p>
+                <p className="text-xs text-slate-300">האם את בטוחה שברצונך למחוק פריט זה? הפעולה תמחק את המידע גם מהבסיס נתונים.</p>
                 <div className="flex gap-2 pt-2">
                   <button onClick={confirmExecuteDelete} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2 rounded-xl text-xs transition-all">
                     כן, מחק
