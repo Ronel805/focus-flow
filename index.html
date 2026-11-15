@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FocusHabits</title>
+  <title>ניהול בית - HomeOS</title>
   
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="FocusHabits" />
+  <meta name="apple-mobile-web-app-title" content="HomeOS" />
   <meta name="theme-color" content="#020617" />
 
   <!-- Tailwind CSS -->
@@ -48,50 +48,15 @@
       } catch (e) {}
     };
 
-    const DEFAULT_QUICK_TEMPLATES = [
-      { id: 'q1', title: 'שתיית 2L מים', microHabit: 'לשתות כוס מים ראשונה על הבוקר', startTime: '08:00', isFavorite: true },
-      { id: 'q2', title: 'אימון כושר / ריצה', microHabit: 'לנעול נעלי ספורט ולצאת ל-2 דקות', startTime: '07:00', isFavorite: true },
-      { id: 'q3', title: 'קריאת ספר', microHabit: 'לקרוא עמוד אחד בלבד בספר', startTime: '21:30', isFavorite: true }
-    ];
-
-    const DAYS_OF_WEEK = [
-      { id: 0, label: "א'" },
-      { id: 1, label: "ב'" },
-      { id: 2, label: "ג'" },
-      { id: 3, label: "ד'" },
-      { id: 4, label: "ה'" },
-      { id: 5, label: "ו'" },
-      { id: 6, label: "ש'" }
-    ];
-
     const SHOPPING_CATEGORIES = ["כללי", "ירקות ופירות 🥑", "מוצרי חלב 🧀", "מאפים וסופר 🍞", "בשר ודגים 🥩", "מוצרי ניקיון 🧼"];
     const NON_FOOD_CATEGORIES = ["כללי 🏠", "ריהוט 🛋️", "עיצוב ואקססוריז ✨", "חשמל ותאורה 💡", "תחזוקה ותיקונים 🧰"];
-    const QUICK_TIMES = ["07:00", "08:00", "12:00", "18:00", "21:00"];
 
     function App() {
-      const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('focus_flow_user') || null);
-      const [notificationPermission, setNotificationPermission] = useState(
-        typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'default'
-      );
-      
-      const [activeTab, setActiveTab] = useState('habits');
-      const [habits, setHabits] = useState([]);
-      const [filter, setFilter] = useState('all');
+      const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('home_os_user') || null);
+      const [activeTab, setActiveTab] = useState('chores');
       
       const todayObj = new Date();
       const todayDateStr = todayObj.toISOString().split('T')[0];
-      const [viewDate, setViewDate] = useState(todayDateStr);
-
-      const [showHabitModal, setShowHabitModal] = useState(false);
-      const [editingHabit, setEditingHabit] = useState(null);
-
-      const [newTitle, setNewTitle] = useState('');
-      const [newMicro, setNewMicro] = useState('');
-      const [newStartTime, setNewStartTime] = useState('08:00');
-      const [newStartDate, setNewStartDate] = useState(todayDateStr);
-      const [newHabitUser, setNewHabitUser] = useState(currentUser || 'נועה');
-      const [selectedDays, setSelectedDays] = useState([0, 1, 2, 3, 4, 5, 6]);
-      const [newIsFavorite, setNewIsFavorite] = useState(false);
 
       // Chores State
       const [chores, setChores] = useState([]);
@@ -125,26 +90,14 @@
       // Confirm Delete Modal State
       const [deleteTarget, setDeleteTarget] = useState(null);
 
-      const requestNotificationPermission = async () => {
-        if ('Notification' in window) {
-          const permission = await Notification.requestPermission();
-          setNotificationPermission(permission);
-          if (permission === 'granted') {
-            new Notification("FocusHabits", { body: "התראות הופעלו בהצלחה!" });
-          }
-        }
-      };
-
       const handleSelectUser = (userName) => {
         setCurrentUser(userName);
-        setNewHabitUser(userName);
         setNewChoreAssignee(userName);
-        localStorage.setItem('focus_flow_user', userName);
-        requestNotificationPermission();
+        localStorage.setItem('home_os_user', userName);
       };
 
       const handleSwitchUser = () => {
-        localStorage.removeItem('focus_flow_user');
+        localStorage.removeItem('home_os_user');
         setCurrentUser(null);
       };
 
@@ -153,20 +106,6 @@
         async function fetchData() {
           if (supabase) {
             try {
-              const { data: habitsData } = await supabase.from('habits').select('*');
-              if (habitsData && habitsData.length > 0) {
-                setHabits(habitsData.map(item => ({
-                  ...item,
-                  microHabit: item.micro_habit,
-                  startTime: item.start_time,
-                  startDate: item.created_at || todayDateStr,
-                  userName: item.user_name || 'נועה',
-                  days: item.days || [],
-                  isFavorite: item.is_favorite || false,
-                  logs: item.logs || {}
-                })));
-              }
-
               const { data: choresData } = await supabase.from('chores').select('*');
               if (choresData && choresData.length > 0) {
                 setChores(choresData.map(item => ({
@@ -217,52 +156,13 @@
         fetchData();
       }, []);
 
-      // תזמון התראות חסכוני בסוללה באמצעות setTimeout מדויק
-      useEffect(() => {
-        if (!currentUser || notificationPermission !== 'granted') return;
-
-        const timers = [];
-        const now = new Date();
-        const currentDStr = now.toISOString().split('T')[0];
-        const currentDayOfWeek = now.getDay();
-
-        const userHabits = habits.filter(h => h.userName === currentUser || h.userName === 'שניהם');
-
-        userHabits.forEach(h => {
-          const isTodayValid = (h.days && h.days.length > 0 && h.days.includes(currentDayOfWeek)) || (h.startDate === currentDStr);
-          if (isTodayValid && h.startTime) {
-            const [hours, minutes] = h.startTime.split(':').map(Number);
-            const targetTime = new Date();
-            targetTime.setHours(hours, minutes, 0, 0);
-
-            const diffMs = targetTime.getTime() - now.getTime();
-            if (diffMs > 0) {
-              const timerId = setTimeout(() => {
-                const isDone = h.logs && h.logs[currentDStr];
-                if (!isDone) {
-                  new Notification(`תזכורת להרגל: ${h.title}`, {
-                    body: h.microHabit ? `💡 צעד קטן: ${h.microHabit}` : 'הגיע הזמן לבצע את ההרגל שלך!',
-                    icon: 'https://cdn-icons-png.flaticon.com/512/3176/3176363.png'
-                  });
-                }
-              }, diffMs);
-              timers.push(timerId);
-            }
-          }
-        });
-
-        return () => {
-          timers.forEach(t => clearTimeout(t));
-        };
-      }, [habits, currentUser, notificationPermission]);
-
       if (!currentUser) {
         return (
           <div className="max-w-md mx-auto min-h-screen flex items-center justify-center p-4">
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full text-center space-y-6 shadow-2xl">
               <div className="space-y-2">
-                <span className="text-4xl">⚡</span>
-                <h1 className="text-2xl font-black text-white">FocusHabits</h1>
+                <span className="text-4xl">🏡</span>
+                <h1 className="text-2xl font-black text-white">ניהול בית</h1>
                 <p className="text-xs text-slate-400">מי משתמש במכשיר הזה כעת?</p>
               </div>
 
@@ -288,167 +188,6 @@
         );
       }
 
-      // --- HABITS ACTIONS ---
-      const toggleHabit = async (id) => {
-        const target = habits.find(h => h.id === id);
-        if (!target) return;
-
-        const isDone = !!(target.logs && target.logs[viewDate]);
-        const updatedLogs = { ...(target.logs || {}) };
-
-        if (isDone) {
-          delete updatedLogs[viewDate];
-        } else {
-          updatedLogs[viewDate] = true;
-          playApplauseSound();
-          if (window.confetti) {
-            window.confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
-          }
-        }
-
-        const newStreak = !isDone ? target.streak + 1 : Math.max(0, target.streak - 1);
-        const updatedHabits = habits.map(h => h.id === id ? { ...h, logs: updatedLogs, streak: newStreak } : h);
-
-        setHabits(updatedHabits);
-
-        if (supabase) {
-          await supabase.from('habits').update({
-            streak: newStreak,
-            logs: updatedLogs
-          }).eq('id', id);
-        }
-      };
-
-      const toggleFavoriteHabit = async (habit, e) => {
-        e.stopPropagation();
-        const newFav = !habit.isFavorite;
-        const updated = habits.map(h => h.id === habit.id ? { ...h, isFavorite: newFav } : h);
-        setHabits(updated);
-
-        if (supabase) {
-          await supabase.from('habits').update({ is_favorite: newFav }).eq('id', habit.id);
-        }
-      };
-
-      const openAddHabitModal = () => {
-        setEditingHabit(null);
-        setNewTitle('');
-        setNewMicro('');
-        setNewStartTime('08:00');
-        setNewStartDate(viewDate);
-        setNewHabitUser(currentUser);
-        setSelectedDays([0, 1, 2, 3, 4, 5, 6]);
-        setNewIsFavorite(false);
-        setShowHabitModal(true);
-      };
-
-      const openEditHabitModal = (habit, e) => {
-        e.stopPropagation();
-        setEditingHabit(habit);
-        setNewTitle(habit.title);
-        setNewMicro(habit.microHabit || '');
-        setNewStartTime(habit.startTime || '08:00');
-        setNewStartDate(habit.startDate || viewDate);
-        setNewHabitUser(habit.userName || currentUser);
-        setSelectedDays(habit.days || []);
-        setNewIsFavorite(habit.isFavorite || false);
-        setShowHabitModal(true);
-      };
-
-      const addQuickHabit = async (tmpl) => {
-        const habit = {
-          id: Date.now().toString(),
-          title: tmpl.title,
-          microHabit: tmpl.microHabit || '',
-          startTime: tmpl.startTime || '08:00',
-          startDate: viewDate,
-          userName: currentUser,
-          days: [0, 1, 2, 3, 4, 5, 6],
-          streak: 0,
-          isFavorite: true,
-          logs: {}
-        };
-        const updated = [...habits, habit];
-        setHabits(updated);
-
-        if (supabase) {
-          await supabase.from('habits').insert([{
-            id: habit.id,
-            title: habit.title,
-            micro_habit: habit.microHabit,
-            start_time: habit.startTime,
-            created_at: habit.startDate,
-            user_name: habit.userName,
-            days: habit.days,
-            streak: 0,
-            is_favorite: true,
-            logs: {}
-          }]);
-        }
-      };
-
-      const saveHabit = async (e) => {
-        e.preventDefault();
-        if (!newTitle.trim()) return;
-
-        if (editingHabit) {
-          const updated = habits.map(h => h.id === editingHabit.id ? {
-            ...h,
-            title: newTitle,
-            microHabit: newMicro,
-            startTime: newStartTime,
-            startDate: newStartDate,
-            userName: newHabitUser,
-            days: selectedDays,
-            isFavorite: newIsFavorite
-          } : h);
-          setHabits(updated);
-
-          if (supabase) {
-            await supabase.from('habits').update({
-              title: newTitle,
-              micro_habit: newMicro,
-              start_time: newStartTime,
-              created_at: newStartDate,
-              user_name: newHabitUser,
-              days: selectedDays,
-              is_favorite: newIsFavorite
-            }).eq('id', editingHabit.id);
-          }
-        } else {
-          const habit = {
-            id: Date.now().toString(),
-            title: newTitle,
-            microHabit: newMicro,
-            startTime: newStartTime,
-            startDate: newStartDate,
-            userName: newHabitUser,
-            days: selectedDays,
-            streak: 0,
-            isFavorite: newIsFavorite,
-            logs: {}
-          };
-          const updated = [...habits, habit];
-          setHabits(updated);
-
-          if (supabase) {
-            await supabase.from('habits').insert([{
-              id: habit.id,
-              title: habit.title,
-              micro_habit: habit.microHabit,
-              start_time: habit.startTime,
-              created_at: habit.startDate,
-              user_name: habit.userName,
-              days: habit.days,
-              streak: 0,
-              is_favorite: habit.isFavorite,
-              logs: {}
-            }]);
-          }
-        }
-        setShowHabitModal(false);
-      };
-
       // --- CHORES ACTIONS ---
       const toggleChore = async (id) => {
         const target = chores.find(c => c.id === id);
@@ -468,7 +207,7 @@
         setEditingChore(null);
         setNewChoreTitle('');
         setNewChoreAssignee(currentUser);
-        setNewChoreDueDate(viewDate);
+        setNewChoreDueDate(todayDateStr);
         setShowChoreModal(true);
       };
 
@@ -477,7 +216,7 @@
         setEditingChore(chore);
         setNewChoreTitle(chore.title);
         setNewChoreAssignee(chore.assignedTo);
-        setNewChoreDueDate(chore.dueDate || viewDate);
+        setNewChoreDueDate(chore.dueDate || todayDateStr);
         setShowChoreModal(true);
       };
 
@@ -707,10 +446,7 @@
       const confirmExecuteDelete = async () => {
         if (!deleteTarget) return;
 
-        if (deleteTarget.type === 'habit') {
-          setHabits(habits.filter(h => h.id !== deleteTarget.id));
-          if (supabase) await supabase.from('habits').delete().eq('id', deleteTarget.id);
-        } else if (deleteTarget.type === 'chore') {
+        if (deleteTarget.type === 'chore') {
           setChores(chores.filter(c => c.id !== deleteTarget.id));
           if (supabase) await supabase.from('chores').delete().eq('id', deleteTarget.id);
         } else if (deleteTarget.type === 'shopping') {
@@ -726,20 +462,6 @@
         setDeleteTarget(null);
       };
 
-      const toggleDaySelection = (dayId) => {
-        if (selectedDays.includes(dayId)) {
-          setSelectedDays(selectedDays.filter(d => d !== dayId));
-        } else {
-          setSelectedDays([...selectedDays, dayId].sort());
-        }
-      };
-
-      const setQuickDate = (offsetDays) => {
-        const d = new Date();
-        d.setDate(d.getDate() + offsetDays);
-        setNewStartDate(d.toISOString().split('T')[0]);
-      };
-
       const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
       const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
 
@@ -749,70 +471,8 @@
       const firstDay = getFirstDayOfMonth(year, month);
       const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 
-      const userHabits = habits.filter(h => h.userName === currentUser || h.userName === 'שניהם');
-
-      const viewDateObj = new Date(viewDate);
-      const viewDayOfWeek = viewDateObj.getDay();
-
-      const viewDateHabits = userHabits.filter(h => {
-        if (h.days && h.days.length > 0) {
-          return h.days.includes(viewDayOfWeek);
-        }
-        return h.startDate === viewDate;
-      });
-
-      const sortedViewHabits = [...viewDateHabits].sort((a, b) => {
-        const timeA = a.startTime || '00:00';
-        const timeB = b.startTime || '00:00';
-        return timeA.localeCompare(timeB);
-      });
-
-      const totalCompletedView = sortedViewHabits.filter(h => h.logs && h.logs[viewDate]).length;
-      const progressPercent = sortedViewHabits.length > 0 ? Math.round((totalCompletedView / sortedViewHabits.length) * 100) : 0;
-
-      const calculateStatsForDays = (numDays) => {
-        let totalPossible = 0;
-        let totalCompleted = 0;
-        const now = new Date();
-
-        for (let i = 0; i < numDays; i++) {
-          const d = new Date(now);
-          d.setDate(d.getDate() - i);
-          const dStr = d.toISOString().split('T')[0];
-          const dDayOfWeek = d.getDay();
-
-          const dayHabits = userHabits.filter(h => {
-            if (h.days && h.days.length > 0) return h.days.includes(dDayOfWeek);
-            return h.startDate === dStr;
-          });
-
-          totalPossible += dayHabits.length;
-          totalCompleted += dayHabits.filter(h => h.logs && h.logs[dStr]).length;
-        }
-
-        if (totalPossible === 0) return 0;
-        return Math.round((totalCompleted / totalPossible) * 100);
-      };
-
-      const weeklyPercent = calculateStatsForDays(7);
-      const monthlyPercent = calculateStatsForDays(30);
-
-      const filteredHabits = sortedViewHabits.filter(h => {
-        const isDone = !!(h.logs && h.logs[viewDate]);
-        if (filter === 'pending') return !isDone;
-        if (filter === 'completed') return isDone;
-        return true;
-      });
-
-      const favoriteHabitsList = userHabits.filter(h => h.isFavorite);
-      const quickHabitsToDisplay = favoriteHabitsList.length > 0 ? favoriteHabitsList : DEFAULT_QUICK_TEMPLATES;
-
       const userChores = chores.filter(c => c.assignedTo === currentUser || c.assignedTo === 'שניהם');
       
-      const viewDateCalendarEvents = calendarEvents
-        .filter(ev => (ev.date === viewDate) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'))
-        .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
-
       const selectedDateEvents = calendarEvents
         .filter(ev => (ev.date === selectedDate) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'))
         .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
@@ -825,14 +485,14 @@
 
       return (
         <div className="max-w-md mx-auto p-4 sm:p-6 space-y-5 pb-24">
-          <header className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
+          <header className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-                  <span className="text-emerald-400">⚡</span> FocusHabits
+                  <span className="text-emerald-400">🏡</span> ניהול בית
                 </h1>
                 <p className="text-xs text-emerald-400/90 font-medium mt-0.5 flex items-center gap-1">
-                  <span>☁️</span> סנכרון DB בזמן אמת
+                  <span>☁️</span> סנכרון משותף בזמן אמת
                 </p>
               </div>
 
@@ -851,199 +511,24 @@
                 </button>
               </div>
             </div>
-
-            {notificationPermission !== 'granted' && (
-              <button 
-                onClick={requestNotificationPermission}
-                className="w-full bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 font-bold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
-              >
-                <span>🔔</span> לחצי כאן להפעלת התראות ודחיפת תזכורות למכשיר
-              </button>
-            )}
-
-            {activeTab === 'habits' && (
-              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-slate-300">התקדמות יומית ל-{viewDate === todayDateStr ? 'היום' : viewDate}</span>
-                  <span className="text-emerald-400 font-bold">{progressPercent}%</span>
-                </div>
-                <div className="h-3 w-full bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
-                  <div 
-                    className="h-full bg-gradient-to-l from-emerald-400 to-teal-500 rounded-full transition-all duration-500"
-                    style={{ width: progressPercent + '%' }}
-                  />
-                </div>
-              </div>
-            )}
           </header>
 
-          <nav className="grid grid-cols-5 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-[10px] sm:text-[11px] font-bold">
-            <button onClick={() => setActiveTab('habits')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'habits' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
-              <span className="text-base">⚡</span> הרגלים
-            </button>
-            <button onClick={() => setActiveTab('chores')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'chores' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
+          <nav className="grid grid-cols-4 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
+            <button onClick={() => setActiveTab('chores')} className={`py-2.5 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'chores' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
               <span className="text-base">🏠</span> משימות
             </button>
-            <button onClick={() => setActiveTab('shopping')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'shopping' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
+            <button onClick={() => setActiveTab('shopping')} className={`py-2.5 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'shopping' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
               <span className="text-base">🛒</span> קניות
             </button>
-            <button onClick={() => setActiveTab('calendar')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'calendar' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
+            <button onClick={() => setActiveTab('calendar')} className={`py-2.5 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'calendar' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
               <span className="text-base">📅</span> יומן
             </button>
-            <button onClick={() => setActiveTab('stats')} className={`py-2 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'stats' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
-              <span className="text-base">📊</span> נתונים
+            <button onClick={() => setActiveTab('stats')} className={`py-2.5 rounded-xl transition-all flex flex-col items-center gap-1 ${activeTab === 'stats' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400'}`}>
+              <span className="text-base">📊</span> סיכום
             </button>
           </nav>
 
-          {/* TAB 1: HABITS */}
-          {activeTab === 'habits' && (
-            <div className="space-y-4">
-              <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center justify-between shadow-md">
-                <span className="text-xs font-bold text-slate-300">📅 בחר תאריך צפייה (היסטוריה / עתיד):</span>
-                <input 
-                  type="date" 
-                  value={viewDate} 
-                  onChange={e => setViewDate(e.target.value)} 
-                  className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none text-center"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="text-[11px] font-bold text-slate-400 flex items-center gap-1">⭐ מועדפים של {currentUser} להוספה מהירה:</h4>
-                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                  {quickHabitsToDisplay.map((tmpl, i) => (
-                    <button
-                      key={tmpl.id || i}
-                      onClick={() => addQuickHabit(tmpl)}
-                      className="whitespace-nowrap bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-slate-200 text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm shrink-0"
-                    >
-                      <span className="text-emerald-400 font-bold">+</span> {tmpl.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {viewDateCalendarEvents.length > 0 && (
-                <div className="space-y-2 bg-slate-900 p-3.5 rounded-2xl border border-amber-500/40 shadow-md">
-                  <h4 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
-                    <span>📋</span> TODO / משימות מתוזמנות ל-{viewDate === todayDateStr ? 'היום' : viewDate}:
-                  </h4>
-                  <div className="space-y-1.5">
-                    {viewDateCalendarEvents.map(ev => (
-                      <div 
-                        key={ev.id} 
-                        onClick={() => toggleEventDone(ev.id)}
-                        className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
-                          ev.done ? 'bg-emerald-950/20 border-emerald-500/30 opacity-60 line-through' : 'bg-slate-950 border-slate-800 hover:border-amber-500/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center ${ev.done ? 'bg-emerald-500 border-emerald-500 text-slate-950 font-bold text-[10px]' : 'border-slate-600'}`}>
-                            {ev.done && '✓'}
-                          </div>
-                          <span className="font-semibold text-slate-200">{ev.title}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px]">
-                          {ev.time && <span className="text-slate-400 font-bold">⏰ {ev.time}</span>}
-                          <span className="bg-amber-500/10 border border-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md font-bold">
-                            👤 {ev.assignedTo}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-medium">
-                  <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-lg ${filter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הכל</button>
-                  <button onClick={() => setFilter('pending')} className={`px-3 py-1 rounded-lg ${filter === 'pending' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>לביצוע</button>
-                  <button onClick={() => setFilter('completed')} className={`px-3 py-1 rounded-lg ${filter === 'completed' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400'}`}>הושלם</button>
-                </div>
-                <button onClick={openAddHabitModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">+ הרגל ל{currentUser}</button>
-              </div>
-
-              <div className="space-y-3">
-                {filteredHabits.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    אין הרגלים מתוכננים לתאריך זה עבור {currentUser}. לחצי על "+ הרגל" להוספה!
-                  </div>
-                ) : (
-                  filteredHabits.map(habit => {
-                    const isDone = !!(habit.logs && habit.logs[viewDate]);
-                    return (
-                      <div key={habit.id} onClick={() => toggleHabit(habit.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${isDone ? 'bg-emerald-950/20 border-emerald-500/40 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
-                        <div className={`mt-0.5 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 border-emerald-500 text-slate-950 scale-105' : 'border-slate-600 bg-slate-950'}`}>
-                          {isDone && <span className="font-black text-xs">✓</span>}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 truncate">
-                              <button 
-                                type="button" 
-                                onClick={(e) => toggleFavoriteHabit(habit, e)} 
-                                className="text-base transition-transform hover:scale-125 focus:outline-none"
-                                title="סמן כמועדף להוספה מהירה"
-                              >
-                                {habit.isFavorite ? '⭐' : '☆'}
-                              </button>
-                              <h3 className={`font-bold text-sm truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-100'}`}>{habit.title}</h3>
-                            </div>
-                            
-                            <div className="flex items-center gap-1.5">
-                              {habit.startTime && (
-                                <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800 font-bold">
-                                  ⏰ {habit.startTime}
-                                </span>
-                              )}
-                              <span className="text-xs font-bold text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">🔥 {habit.streak}</span>
-                            </div>
-                          </div>
-
-                          {habit.microHabit && <p className="text-xs text-emerald-400/90 mt-1.5 flex items-center gap-1 bg-emerald-500/10 p-1.5 rounded-lg border border-emerald-500/20"><span>💡</span> {habit.microHabit}</p>}
-
-                          <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-800/60">
-                            <div className="flex gap-1">
-                              {habit.days && habit.days.length > 0 ? (
-                                DAYS_OF_WEEK.map(d => (
-                                  <span key={d.id} className={`text-[9px] px-1 rounded ${habit.days.includes(d.id) ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'text-slate-600 opacity-40'}`}>
-                                    {d.label}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded font-bold">
-                                  📅 חד-פעמי ל-{habit.startDate}
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <button 
-                                onClick={(e) => openEditHabitModal(habit, e)}
-                                className="text-[11px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
-                              >
-                                ✏️ ערוך
-                              </button>
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'habit', id: habit.id }); }}
-                                className="text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 transition-all"
-                              >
-                                🗑️ מחק
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: CHORES */}
+          {/* TAB 1: CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
@@ -1086,10 +571,9 @@
             </div>
           )}
 
-          {/* TAB 3: SHOPPING & HOME PRODUCTS */}
+          {/* TAB 2: SHOPPING & HOME PRODUCTS */}
           {activeTab === 'shopping' && (
             <div className="space-y-4">
-              {/* תתי-טאבים לבחירה בין סופר לרהיטים/מוצרים */}
               <div className="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
                 <button 
                   onClick={() => setShoppingSubTab('super')} 
@@ -1105,7 +589,6 @@
                 </button>
               </div>
 
-              {/* תוכן סופר ומזון */}
               {shoppingSubTab === 'super' && (
                 <div className="space-y-4">
                   <form onSubmit={addShoppingItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
@@ -1177,7 +660,6 @@
                 </div>
               )}
 
-              {/* תוכן רהיטים ומוצרים לבית (לא אוכל) */}
               {shoppingSubTab === 'furniture' && (
                 <div className="space-y-4">
                   <form onSubmit={addNonFoodItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
@@ -1251,7 +733,7 @@
             </div>
           )}
 
-          {/* TAB 4: CALENDAR */}
+          {/* TAB 3: CALENDAR */}
           {activeTab === 'calendar' && (
             <div className="space-y-4">
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-4 shadow-lg">
@@ -1336,52 +818,23 @@
             </div>
           )}
 
-          {/* TAB 5: STATS */}
+          {/* TAB 4: STATS */}
           {activeTab === 'stats' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
-                  <span className="text-xs text-slate-400 font-semibold">ממוצע השלמה שבועי</span>
-                  <div className="text-2xl font-black text-emerald-400 mt-1">{weeklyPercent}%</div>
-                </div>
-                <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl text-center shadow-md">
-                  <span className="text-xs text-slate-400 font-semibold">ממוצע השלמה חודשי</span>
-                  <div className="text-2xl font-black text-teal-400 mt-1">{monthlyPercent}%</div>
-                </div>
-              </div>
-
               <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>🔥</span> רצפים (Streaks) לפי הרגל של {currentUser}</h3>
-                <div className="space-y-2">
-                  {userHabits.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-2">אין הרגלים מוגדרים כרגע.</p>
-                  ) : (
-                    userHabits.map(h => (
-                      <div key={h.id} className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
-                        <span className="font-semibold text-slate-200 truncate">{h.title}</span>
-                        <span className="text-amber-400 font-bold bg-amber-400/10 px-2 py-0.5 rounded-lg border border-amber-400/20">
-                          🔥 {h.streak || 0} ימים
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>📈</span> סיכום פעילות של {currentUser}</h3>
+                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-1.5"><span>📊</span> סיכום מצב הבית עבור {currentUser}</h3>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
-                    <span className="text-slate-400">סה"כ הרגלים מתוכננים לתאריך:</span>
-                    <span className="font-bold text-white">{sortedViewHabits.length}</span>
+                    <span className="text-slate-400">משימות בית פתוחות שלך/של שניהם:</span>
+                    <span className="font-bold text-amber-400">{userChores.filter(c => !c.done).length}</span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
-                    <span className="text-slate-400">הרגלים שבוצעו בתאריך:</span>
-                    <span className="font-bold text-emerald-400">{totalCompletedView} מתוך {sortedViewHabits.length}</span>
+                    <span className="text-slate-400">מוצרים ממתינים ברשימת הסופר:</span>
+                    <span className="font-bold text-emerald-400">{unboughtItems.length}</span>
                   </div>
                   <div className="flex justify-between py-1.5">
-                    <span className="text-slate-400">משימות בית פתוחות:</span>
-                    <span className="font-bold text-amber-400">{userChores.filter(c => !c.done).length}</span>
+                    <span className="text-slate-400">רהיטים ומוצרים שצריך לרכוש:</span>
+                    <span className="font-bold text-teal-400">{unacquiredNonFood.length}</span>
                   </div>
                 </div>
               </div>
@@ -1394,7 +847,7 @@
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-xs w-full text-center space-y-4 shadow-2xl">
                 <div className="text-3xl">⚠️</div>
                 <h3 className="font-bold text-base text-white">אישור מחיקה</h3>
-                <p className="text-xs text-slate-300">האם את בטוחה שברצונך למחוק פריט זה? הפעולה תמחק את המידע גם מהבסיס נתונים.</p>
+                <p className="text-xs text-slate-300">האם את בטוחה שברצונך למחוק פריט זה?</p>
                 <div className="flex gap-2 pt-2">
                   <button onClick={confirmExecuteDelete} className="flex-1 bg-red-500 hover:bg-red-400 text-white font-bold py-2 rounded-xl text-xs transition-all">
                     כן, מחק
@@ -1445,90 +898,6 @@
             </div>
           )}
 
-          {/* ADD / EDIT HABIT MODAL */}
-          {showHabitModal && (
-            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                  <h3 className="font-bold text-base text-white">{editingHabit ? 'עריכת הרגל' : 'הוספת הרגל חדש'}</h3>
-                  <button onClick={() => setShowHabitModal(false)} className="text-slate-400 hover:text-white">✕</button>
-                </div>
-
-                <form onSubmit={saveHabit} className="space-y-3.5">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">שם ההרגל</label>
-                    <input type="text" required placeholder="למשל: אימון כושר" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">משויך ל-</label>
-                    <select value={newHabitUser} onChange={e => setNewHabitUser(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-emerald-400 font-bold outline-none">
-                      <option value="נועה">נועה</option>
-                      <option value="רונאל">רונאל</option>
-                      <option value="שניהם">שניהם</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">צעד קטן של 2 דקות (מיקרו-הרגל)</label>
-                    <input type="text" placeholder="למשל: לנעול נעלי ספורט" value={newMicro} onChange={e => setNewMicro(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" />
-                  </div>
-
-                  <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                    <input 
-                      type="checkbox" 
-                      id="favCheck"
-                      checked={newIsFavorite} 
-                      onChange={e => setNewIsFavorite(e.target.checked)} 
-                      className="w-4 h-4 accent-emerald-500 cursor-pointer"
-                    />
-                    <label htmlFor="favCheck" className="text-xs text-slate-300 cursor-pointer font-semibold flex items-center gap-1">
-                      ⭐ סמן כהרגל מועדף (יופיע בסרגל הוספה מהירה)
-                    </label>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">שעת התחלה</label>
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <input type="time" value={newStartTime} onChange={e => setNewStartTime(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none flex-1 text-center" />
-                    </div>
-                    <div className="flex justify-between gap-1">
-                      {QUICK_TIMES.map(t => (
-                        <button type="button" key={t} onClick={() => setNewStartTime(t)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg border transition-all ${newStartTime === t ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך התחלה / יעד</label>
-                    <input type="date" value={newStartDate} onChange={e => setNewStartDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none mb-1.5 text-center" />
-                    <div className="flex gap-1.5">
-                      <button type="button" onClick={() => setQuickDate(0)} className={`flex-1 py-1 text-[10px] font-bold rounded-lg border ${newStartDate === todayDateStr ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>היום</button>
-                      <button type="button" onClick={() => setQuickDate(1)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-400">מחר</button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">ימי חזרה בשבוע (השאר ריק להרגל חד-פעמי)</label>
-                    <div className="flex justify-between gap-1">
-                      {DAYS_OF_WEEK.map(day => (
-                        <button type="button" key={day.id} onClick={() => toggleDaySelection(day.id)} className={`w-8 h-8 rounded-xl font-bold text-xs border transition-all ${selectedDays.includes(day.id) ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'bg-slate-950 border-slate-800 text-slate-400'}`}>
-                          {day.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
-                    {editingHabit ? 'עדכן הרגל ב-DB' : 'שמור הרגל ב-DB'}
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
-
           {/* ADD / EDIT CHORE MODAL */}
           {showChoreModal && (
             <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -1559,7 +928,7 @@
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py.5 rounded-xl text-xs shadow-lg mt-2">
                     {editingChore ? 'עדכן משימה ב-DB' : 'שמור משימה ב-DB'}
                   </button>
                 </form>
