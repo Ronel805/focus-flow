@@ -51,6 +51,16 @@
     const SHOPPING_CATEGORIES = ["כללי", "ירקות ופירות 🥑", "מוצרי חלב 🧀", "מאפים וסופר 🍞", "בשר ודגים 🥩", "מוצרי ניקיון 🧼"];
     const NON_FOOD_CATEGORIES = ["כללי 🏠", "ריהוט 🛋️", "עיצוב ואקססוריז ✨", "חשמל ותאורה 💡", "תחזוקה ותיקונים 🧰"];
 
+    const QUICK_SUPER_FAVS = [
+      { title: 'חלב 🥛', category: 'מוצרי חלב 🧀' },
+      { title: 'ביצים 🥚', category: 'מוצרי חלב 🧀' },
+      { title: 'לחם 🍞', category: 'מאפים וסופר 🍞' },
+      { title: 'עגבניות 🍅', category: 'ירקות ופירות 🥑' },
+      { title: 'מלפפון 🥒', category: 'ירקות ופירות 🥑' },
+      { title: 'גבינה לבנה 🧀', category: 'מוצרי חלב 🧀' },
+      { title: 'נייר טואלט 🧻', category: 'מוצרי ניקיון 🧼' }
+    ];
+
     function App() {
       const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('home_os_user') || null);
       const [activeTab, setActiveTab] = useState('chores');
@@ -65,17 +75,21 @@
       const [newChoreTitle, setNewChoreTitle] = useState('');
       const [newChoreAssignee, setNewChoreAssignee] = useState(currentUser || 'נועה');
       const [newChoreDueDate, setNewChoreDueDate] = useState(todayDateStr);
+      const [quickChoreTitle, setQuickChoreTitle] = useState('');
+      const [choreFilterUser, setChoreFilterUser] = useState('all');
 
       // Shopping List State (Food & Super)
       const [shoppingItems, setShoppingItems] = useState([]);
       const [newItemTitle, setNewItemTitle] = useState('');
       const [newItemCategory, setNewItemCategory] = useState('כללי');
+      const [quickSuperTitle, setQuickSuperTitle] = useState('');
 
       // Non-Food / Furniture State
       const [nonFoodItems, setNonFoodItems] = useState([]);
       const [newNonFoodTitle, setNewNonFoodTitle] = useState('');
       const [newNonFoodCategory, setNewNonFoodCategory] = useState('כללי 🏠');
-      const [shoppingSubTab, setShoppingSubTab] = useState('super'); // 'super' או 'furniture'
+      const [quickNonFoodTitle, setQuickNonFoodTitle] = useState('');
+      const [shoppingSubTab, setShoppingSubTab] = useState('super');
 
       // Calendar Events State
       const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -203,6 +217,31 @@
         }
       };
 
+      const handleQuickAddChore = async (e) => {
+        e.preventDefault();
+        if (!quickChoreTitle.trim()) return;
+
+        const chore = {
+          id: Date.now().toString(),
+          title: quickChoreTitle,
+          assignedTo: currentUser,
+          dueDate: todayDateStr,
+          done: false
+        };
+        setChores([chore, ...chores]);
+        setQuickChoreTitle('');
+
+        if (supabase) {
+          await supabase.from('chores').insert([{
+            id: chore.id,
+            title: chore.title,
+            assigned_to: chore.assignedTo,
+            due_date: chore.dueDate,
+            done: false
+          }]);
+        }
+      };
+
       const openAddChoreModal = () => {
         setEditingChore(null);
         setNewChoreTitle('');
@@ -248,7 +287,7 @@
             dueDate: newChoreDueDate,
             done: false
           };
-          setChores([...chores, chore]);
+          setChores([chore, ...chores]);
 
           if (supabase) {
             await supabase.from('chores').insert([{
@@ -264,20 +303,40 @@
       };
 
       // --- SHOPPING LIST ACTIONS (FOOD) ---
-      const addShoppingItem = async (e) => {
-        e.preventDefault();
-        if (!newItemTitle.trim()) return;
-
+      const addFavToSuper = async (fav) => {
         const item = {
-          id: Date.now().toString(),
-          title: newItemTitle,
-          category: newItemCategory,
+          id: Date.now().toString() + Math.random(),
+          title: fav.title,
+          category: fav.category,
           addedBy: currentUser,
           bought: false
         };
-
         setShoppingItems([item, ...shoppingItems]);
-        setNewItemTitle('');
+
+        if (supabase) {
+          await supabase.from('shopping_list').insert([{
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            added_by: item.addedBy,
+            bought: false
+          }]);
+        }
+      };
+
+      const handleQuickAddSuper = async (e) => {
+        e.preventDefault();
+        if (!quickSuperTitle.trim()) return;
+
+        const item = {
+          id: Date.now().toString(),
+          title: quickSuperTitle,
+          category: 'כללי',
+          addedBy: currentUser,
+          bought: false
+        };
+        setShoppingItems([item, ...shoppingItems]);
+        setQuickSuperTitle('');
 
         if (supabase) {
           await supabase.from('shopping_list').insert([{
@@ -314,20 +373,19 @@
       };
 
       // --- NON-FOOD / FURNITURE ACTIONS ---
-      const addNonFoodItem = async (e) => {
+      const handleQuickAddNonFood = async (e) => {
         e.preventDefault();
-        if (!newNonFoodTitle.trim()) return;
+        if (!quickNonFoodTitle.trim()) return;
 
         const item = {
           id: Date.now().toString(),
-          title: newNonFoodTitle,
-          category: newNonFoodCategory,
+          title: quickNonFoodTitle,
+          category: 'כללי 🏠',
           addedBy: currentUser,
           acquired: false
         };
-
         setNonFoodItems([item, ...nonFoodItems]);
-        setNewNonFoodTitle('');
+        setQuickNonFoodTitle('');
 
         if (supabase) {
           await supabase.from('non_food_list').insert([{
@@ -364,6 +422,12 @@
       };
 
       // --- CALENDAR EVENTS ACTIONS ---
+      const setDateShortcut = (daysOffset, setterFn) => {
+        const d = new Date();
+        d.setDate(d.getDate() + daysOffset);
+        setterFn(d.toISOString().split('T')[0]);
+      };
+
       const openAddEventModal = () => {
         setEditingEvent(null);
         setNewEventTitle('');
@@ -471,14 +535,28 @@
       const firstDay = getFirstDayOfMonth(year, month);
       const monthNames = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
 
-      const userChores = chores.filter(c => c.assignedTo === currentUser || c.assignedTo === 'שניהם');
+      const filteredChores = chores.filter(c => {
+        if (choreFilterUser === 'mine') return c.assignedTo === currentUser;
+        if (choreFilterUser === 'ronel') return c.assignedTo === (currentUser === 'נועה' ? 'רונאל' : 'נועה');
+        if (choreFilterUser === 'both') return c.assignedTo === 'שניהם';
+        return true;
+      });
       
       const selectedDateEvents = calendarEvents
         .filter(ev => (ev.date === selectedDate) && (ev.assignedTo === currentUser || ev.assignedTo === 'שניהם'))
         .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
 
       const unboughtItems = shoppingItems.filter(i => !i.bought);
-      const boughtItems = shoppingItems.filter(i => i.bought);
+      const boughtItems = shoppingItems.filter(i => !i.bought === false && i.bought);
+
+      // קיבוץ ומיון מוצרי הסופר לפי קטגוריות
+      const groupedUnboughtSuper = SHOPPING_CATEGORIES.reduce((acc, cat) => {
+        const itemsInCat = unboughtItems.filter(i => (i.category || 'כללי') === cat);
+        if (itemsInCat.length > 0) {
+          acc[cat] = itemsInCat;
+        }
+        return acc;
+      }, {});
 
       const unacquiredNonFood = nonFoodItems.filter(i => !i.acquired);
       const acquiredNonFood = nonFoodItems.filter(i => i.acquired);
@@ -531,23 +609,38 @@
           {/* TAB 1: CHORES */}
           {activeTab === 'chores' && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-md">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-200">משימות בית עבור {currentUser}</h3>
-                  <p className="text-[11px] text-slate-400">מסונכרנות ב-DB בין נועה לרונאל</p>
+              <form onSubmit={handleQuickAddChore} className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex gap-2 shadow-md">
+                <input 
+                  type="text" 
+                  placeholder="⚡ הוספה מהירה של משימה... (לחצי Enter)" 
+                  value={quickChoreTitle} 
+                  onChange={e => setQuickChoreTitle(e.target.value)} 
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                />
+                <button type="submit" className="bg-emerald-500 text-slate-950 px-4 rounded-xl text-xs font-bold shadow">
+                  +
+                </button>
+              </form>
+
+              <div className="flex items-center justify-between bg-slate-900 p-2.5 rounded-2xl border border-slate-800">
+                <div className="flex gap-1 overflow-x-auto text-[11px] font-bold">
+                  <button onClick={() => setChoreFilterUser('all')} className={`px-2.5 py-1 rounded-lg ${choreFilterUser === 'all' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>הכל</button>
+                  <button onClick={() => setChoreFilterUser('mine')} className={`px-2.5 py-1 rounded-lg ${choreFilterUser === 'mine' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>שלי</button>
+                  <button onClick={() => setChoreFilterUser('ronel')} className={`px-2.5 py-1 rounded-lg ${choreFilterUser === 'ronel' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>של {currentUser === 'נועה' ? 'רונאל' : 'נועה'}</button>
+                  <button onClick={() => setChoreFilterUser('both')} className={`px-2.5 py-1 rounded-lg ${choreFilterUser === 'both' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'}`}>שניהם</button>
                 </div>
-                <button onClick={openAddChoreModal} className="bg-emerald-500 text-slate-950 font-bold px-3 py-1.5 rounded-xl text-xs shadow-md">
-                  + משימה חדשה
+                <button onClick={openAddChoreModal} className="bg-slate-950 border border-slate-800 text-emerald-400 font-bold px-2.5 py-1 rounded-xl text-xs">
+                  מלא ✏️
                 </button>
               </div>
 
               <div className="space-y-2.5">
-                {userChores.length === 0 ? (
+                {filteredChores.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                    אין משימות פתוחות המשויכות ל-{currentUser}. לחצי על "+ משימה חדשה" כדי להוסיף!
+                    אין משימות תחת סינון זה. הוסיפי למעלה בהוספה המהירה!
                   </div>
                 ) : (
-                  userChores.map(chore => (
+                  filteredChores.map(chore => (
                     <div key={chore.id} onClick={() => toggleChore(chore.id)} className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${chore.done ? 'bg-slate-950/50 border-slate-900 opacity-60' : 'bg-slate-900 border-slate-800'}`}>
                       <div className="flex items-center gap-3">
                         <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${chore.done ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600 bg-slate-950'}`}>{chore.done && <span className="font-bold text-xs">✓</span>}</div>
@@ -591,47 +684,61 @@
 
               {shoppingSubTab === 'super' && (
                 <div className="space-y-4">
-                  <form onSubmit={addShoppingItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-                    <h3 className="text-xs font-bold text-slate-200">🛒 הוספת מוצר לרשימת הסופר</h3>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        required 
-                        placeholder="למשל: חלב, לחם דגנים, עגבניות..." 
-                        value={newItemTitle} 
-                        onChange={e => setNewItemTitle(e.target.value)} 
-                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" 
-                      />
-                      <select 
-                        value={newItemCategory} 
-                        onChange={e => setNewItemCategory(e.target.value)} 
-                        className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
-                      >
-                        {SHOPPING_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                      </select>
+                  <div className="space-y-1.5">
+                    <h4 className="text-[11px] font-bold text-slate-400 flex items-center gap-1">⭐ מוצרים קבועים להוספה מהירה בלחיצה:</h4>
+                    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                      {QUICK_SUPER_FAVS.map((fav, i) => (
+                        <button
+                          key={i}
+                          onClick={() => addFavToSuper(fav)}
+                          className="whitespace-nowrap bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-slate-200 text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm shrink-0"
+                        >
+                          <span className="text-emerald-400 font-bold">+</span> {fav.title}
+                        </button>
+                      ))}
                     </div>
-                    <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-md">
-                      + הוסף מוצר לסופר
+                  </div>
+
+                  <form onSubmit={handleQuickAddSuper} className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex gap-2 shadow-md">
+                    <input 
+                      type="text" 
+                      placeholder="⚡ הוספה מהירה לסופר... (לחצי Enter)" 
+                      value={quickSuperTitle} 
+                      onChange={e => setQuickSuperTitle(e.target.value)} 
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                    <button type="submit" className="bg-emerald-500 text-slate-950 px-4 rounded-xl text-xs font-bold shadow">
+                      +
                     </button>
                   </form>
 
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-300">🛍️ מוצרים לקנייה ({unboughtItems.length})</h4>
+                  {/* הצגת המוצרים ממוינים לפי קטגוריות */}
+                  <div className="space-y-4">
+                    <h4 className="text-xs font-bold text-slate-300">🛍️ מוצרים לקנייה לפי קטגוריות ({unboughtItems.length})</h4>
                     {unboughtItems.length === 0 ? (
                       <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-slate-800 rounded-2xl">
                         רשימת הסופר ריקה!
                       </div>
                     ) : (
-                      unboughtItems.map(item => (
-                        <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-900 border border-slate-800 p-3 rounded-2xl flex items-center justify-between cursor-pointer hover:border-emerald-500/40 transition-all">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-5 h-5 rounded-md border-2 border-slate-600 bg-slate-950" />
-                            <span className="text-xs font-semibold text-slate-100">{item.title}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] bg-slate-950 border border-slate-800 text-slate-400 px-2 py-0.5 rounded-md">{item.category}</span>
-                            <span className="text-[10px] text-amber-400">👤 {item.addedBy}</span>
-                            <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                      Object.entries(groupedUnboughtSuper).map(([category, items]) => (
+                        <div key={category} className="space-y-2 bg-slate-900/60 border border-slate-800/80 p-3 rounded-2xl">
+                          <h5 className="text-[11px] font-bold text-emerald-400 pb-1 border-b border-slate-800 flex items-center justify-between">
+                            <span>📂 {category}</span>
+                            <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded-md text-slate-400">{items.length}</span>
+                          </h5>
+                          <div className="space-y-1.5">
+                            {items.map(item => (
+                              <div key={item.id} onClick={() => toggleShoppingBought(item.id)} className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between cursor-pointer hover:border-emerald-500/40 transition-all">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-4 h-4 rounded border border-slate-600 bg-slate-950" />
+                                  <span className="text-xs font-semibold text-slate-100">{item.title}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-amber-400">👤 {item.addedBy}</span>
+                                  <button onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: 'shopping', id: item.id }); }} className="text-red-400 hover:text-red-300 p-1 text-xs">🗑️</button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))
@@ -662,27 +769,16 @@
 
               {shoppingSubTab === 'furniture' && (
                 <div className="space-y-4">
-                  <form onSubmit={addNonFoodItem} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-                    <h3 className="text-xs font-bold text-slate-200">🛋️ הוספת רהיט או מוצר לבית</h3>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        required 
-                        placeholder="למשל: ספה לסלון, שולחן כתיבה, מנורה..." 
-                        value={newNonFoodTitle} 
-                        onChange={e => setNewNonFoodTitle(e.target.value)} 
-                        className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500" 
-                      />
-                      <select 
-                        value={newNonFoodCategory} 
-                        onChange={e => setNewNonFoodCategory(e.target.value)} 
-                        className="bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-emerald-400 font-bold outline-none"
-                      >
-                        {NON_FOOD_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                      </select>
-                    </div>
-                    <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2 rounded-xl text-xs shadow-md">
-                      + הוסף לרשימת רהיטים ומוצרים
+                  <form onSubmit={handleQuickAddNonFood} className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex gap-2 shadow-md">
+                    <input 
+                      type="text" 
+                      placeholder="⚡ הוספה מהירה לרהיטים/מוצרים... (לחצי Enter)" 
+                      value={quickNonFoodTitle} 
+                      onChange={e => setQuickNonFoodTitle(e.target.value)} 
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                    <button type="submit" className="bg-emerald-500 text-slate-950 px-4 rounded-xl text-xs font-bold shadow">
+                      +
                     </button>
                   </form>
 
@@ -826,7 +922,7 @@
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">משימות בית פתוחות שלך/של שניהם:</span>
-                    <span className="font-bold text-amber-400">{userChores.filter(c => !c.done).length}</span>
+                    <span className="font-bold text-amber-400">{chores.filter(c => !c.done && (c.assignedTo === currentUser || c.assignedTo === 'שניהם')).length}</span>
                   </div>
                   <div className="flex justify-between py-1.5 border-b border-slate-800">
                     <span className="text-slate-400">מוצרים ממתינים ברשימת הסופר:</span>
@@ -890,6 +986,16 @@
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">תאריך יעד מהיר</label>
+                    <div className="flex gap-1.5 mb-1.5">
+                      <button type="button" onClick={() => setDateShortcut(0, setSelectedDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-emerald-400">היום</button>
+                      <button type="button" onClick={() => setDateShortcut(1, setSelectedDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-300">מחר</button>
+                      <button type="button" onClick={() => setDateShortcut(7, setSelectedDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-300">עוד שבוע</button>
+                    </div>
+                    <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-emerald-400 font-bold outline-none text-center" />
+                  </div>
+
                   <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
                     {editingEvent ? 'עדכן אירוע ב-DB' : 'שמור אירוע ב-DB'}
                   </button>
@@ -928,7 +1034,13 @@
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py.5 rounded-xl text-xs shadow-lg mt-2">
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => setDateShortcut(0, setNewChoreDueDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-emerald-400">היום</button>
+                    <button type="button" onClick={() => setDateShortcut(1, setNewChoreDueDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-300">מחר</button>
+                    <button type="button" onClick={() => setDateShortcut(3, setNewChoreDueDate)} className="flex-1 py-1 text-[10px] font-bold rounded-lg border bg-slate-950 border-slate-800 text-slate-300">עוד 3 ימים</button>
+                  </div>
+
+                  <button type="submit" className="w-full bg-emerald-500 text-slate-950 font-bold py-2.5 rounded-xl text-xs shadow-lg mt-2">
                     {editingChore ? 'עדכן משימה ב-DB' : 'שמור משימה ב-DB'}
                   </button>
                 </form>
